@@ -3,7 +3,7 @@ import argparse
 from args import train_argparser, eval_argparser
 from config_reader import process_configs
 from spert import input_reader
-from spert.spert_trainer import SpERTTrainer
+from spert.trainers import SpERTTrainer
 
 
 def __train(run_args):
