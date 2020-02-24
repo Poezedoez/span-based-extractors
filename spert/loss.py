@@ -47,6 +47,7 @@ class SpERTLoss(Loss):
         self._optimizer.step()
         self._scheduler.step()
         self._model.zero_grad()
+
         return train_loss.item()
 
 class SpETLoss(Loss):
@@ -57,8 +58,7 @@ class SpETLoss(Loss):
         self._scheduler = scheduler
         self._max_grad_norm = max_grad_norm
 
-    def compute(self, entity_logits, entity_types, entity_sample_mask):
-        # entity loss
+    def compute(self, rel_logits, rel_types, entity_logits, entity_types, rel_sample_mask, entity_sample_mask):
         entity_logits = entity_logits.view(-1, entity_logits.shape[-1])
         entity_types = entity_types.view(-1)
         entity_sample_mask = entity_sample_mask.view(-1).float()
@@ -72,4 +72,5 @@ class SpETLoss(Loss):
         self._optimizer.step()
         self._scheduler.step()
         self._model.zero_grad()
+
         return train_loss.item()

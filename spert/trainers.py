@@ -204,10 +204,10 @@ class SpERTTrainer(BaseTrainer):
 
         # SpERT is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
         # If you still want to train SpERT on multiple GPUs, uncomment the following lines
-        # # parallelize model
-        # if self._device.type != 'cpu':
-        #     model = torch.nn.DataParallel(model)
-
+        # parallelize model
+        if self._device.type != 'cpu':
+            model = torch.nn.DataParallel(model)
+            print("GPU's available: ", torch.cuda.device_count())
         model.to(self._device)
 
         # create optimizer
@@ -220,7 +220,10 @@ class SpERTTrainer(BaseTrainer):
         # create loss function
         rel_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
         entity_criterion = torch.nn.CrossEntropyLoss(reduction='none')
-        compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
+        if args.skip_relations:
+            compute_loss = SpETLoss(entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
+        else:
+            compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
 
         # eval validation set
         if args.init_eval:
