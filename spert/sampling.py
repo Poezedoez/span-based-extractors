@@ -322,6 +322,9 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
     entity_types = pos_entity_types + neg_entity_types
     entity_masks = pos_entity_masks + neg_entity_masks
     entity_sizes = pos_entity_sizes + list(neg_entity_sizes)
+    print("len entity types, pos, neg, total:", len(pos_entity_types), len(neg_entity_types), len(entity_types))
+    print("len entity masks, pos, neg, total:", len(pos_entity_masks), len(neg_entity_masks), len(entity_masks))
+    print("entity_sizes:", entity_sizes)
 
     rels = pos_rels + neg_rels
     rel_types = [r.index for r in pos_rel_types] + neg_rel_types

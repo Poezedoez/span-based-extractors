@@ -329,6 +329,10 @@ class SpERTTrainer(BaseTrainer):
             if global_iteration % self.args.train_log_iter == 0:
                 self._log_train(optimizer, batch_loss, epoch, iteration, global_iteration, dataset.label)
 
+            ##TODO: debugging, remove following'
+            if iteration == 5:
+                break
+
         return iteration
 
     def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
