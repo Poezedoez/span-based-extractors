@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=semeval_train
-#SBATCH --time=6:00:00
+#SBATCH --time=4:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks-per-node=1
