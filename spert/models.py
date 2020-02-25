@@ -124,11 +124,7 @@ class SpERT(BertPreTrainedModel):
 
     def _classify_entities(self, encodings, h, entity_masks, size_embeddings):
         # max pool entity candidate spans
-        ##TODO: too large for 10gb cuda memory!! Somehow extremely large when validating, but not when training :thinkingface:
-        print("encodings", encodings.shape)
-        print("entity_masks", entity_masks.shape)
-        print("hidden", h.shape)
-        entity_spans_pool = entity_masks.unsqueeze(-1) * h.unsqueeze(1).repeat(1, entity_masks.shape[1], 1, 1)
+        entity_spans_pool = entity_masks.unsqueeze(-1) * h.unsqueeze(1)
         entity_spans_pool = entity_spans_pool.max(dim=2)[0]
 
         # get cls token as candidate context representation
