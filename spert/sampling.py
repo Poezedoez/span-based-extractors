@@ -370,7 +370,6 @@ def _create_eval_sample(doc, max_span_size, context_size):
             entity_spans.append(span)
             entity_masks.append(create_entity_mask(*span, context_size))
             entity_sizes.append(size)
-
     # create tensors
     # token indices
     _encoding = encoding
