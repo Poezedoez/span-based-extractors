@@ -220,7 +220,10 @@ class SpERTTrainer(BaseTrainer):
         # create loss function
         rel_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
         entity_criterion = torch.nn.CrossEntropyLoss(reduction='none')
-        compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
+        if args.skip_relations:
+            compute_loss = SpETLoss(entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
+        else:
+            compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
 
         # eval validation set
         if args.init_eval:

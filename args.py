@@ -33,6 +33,7 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--eval_batch_size', type=int, default=1, help="Evaluation batch size")
     arg_parser.add_argument('--max_pairs', type=int, default=1000,
                             help="Maximum entity pairs to process during training/evaluation")
+    arg_parser.add_argument('--skip_relations', action='store_true', default=False, help="Skip training/evaluation for relations completely")
     arg_parser.add_argument('--rel_filter_threshold', type=float, default=0.4, help="Filter threshold for relations")
     arg_parser.add_argument('--size_embedding', type=int, default=25, help="Dimensionality of size embedding")
     arg_parser.add_argument('--prop_drop', type=float, default=0.1, help="Probability of dropout used in SpERT")
