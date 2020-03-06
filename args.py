@@ -28,7 +28,7 @@ def _add_common_args(arg_parser):
     # Model / Training / Evaluation
     arg_parser.add_argument('--model_path', type=str, help="Path to directory that contains model checkpoints")
     arg_parser.add_argument('--model_type', type=str, default="spert", help="Type of model")
-    arg_parser.add_argument('--cpu', action='store_true', default=True,
+    arg_parser.add_argument('--cpu', action='store_true', default=False,
                             help="If true, train/evaluate on CPU even if a CUDA device is available")
     arg_parser.add_argument('--eval_batch_size', type=int, default=1, help="Evaluation batch size")
     arg_parser.add_argument('--max_pairs', type=int, default=1000,
