@@ -28,7 +28,7 @@ def _add_common_args(arg_parser):
     # Model / Training / Evaluation
     arg_parser.add_argument('--model_path', type=str, help="Path to directory that contains model checkpoints")
     arg_parser.add_argument('--model_type', type=str, default="spert", help="Type of model")
-    arg_parser.add_argument('--cpu', action='store_true', default=False,
+    arg_parser.add_argument('--cpu', action='store_true', default=True,
                             help="If true, train/evaluate on CPU even if a CUDA device is available")
     arg_parser.add_argument('--eval_batch_size', type=int, default=1, help="Evaluation batch size")
     arg_parser.add_argument('--max_pairs', type=int, default=1000,
@@ -58,6 +58,8 @@ def train_argparser():
                             help="If true, evaluate validation set before training")
     arg_parser.add_argument('--save_optimizer', action='store_true', default=False,
                             help="Save optimizer alongside model")
+    arg_parser.add_argument('--store_predictions', action='store_true', default=False,
+                            help="If true, store predictions on disc (in log directory)")
     arg_parser.add_argument('--train_log_iter', type=int, default=1, help="Log training process every x iterations")
     arg_parser.add_argument('--final_eval', action='store_true', default=False,
                             help="Evaluate the model only after training, not at every epoch")
