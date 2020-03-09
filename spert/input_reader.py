@@ -215,3 +215,57 @@ class JsonInputReader(BaseInputReader):
             relations.append(relation)
 
         return relations
+
+class StringInputReader(BaseInputReader):
+    def __init__(self, types_path: str, tokenizer: BertTokenizer, logger: Logger = None):
+        super().__init__(types_path, tokenizer, logger)
+
+    def read(self, data_dict):
+        guid = data_dict['guid']
+        dataset = Dataset(guid, self)
+        self._parse_dataset(data_dict, dataset)
+        self._datasets[guid] = dataset
+
+        self._context_size = self._calc_context_size(self._datasets.values())
+
+    def _parse_dataset(self, data_dict, dataset):
+        documents = [data_dict]
+        for sentence in data_dict['sentences']:
+            self._parse_document(sentence, dataset)
+
+    def _parse_document(self, sentence, dataset) -> Document:
+        jtokens = self._tokenizer.tokenize(sentence)
+
+        # parse tokens
+        doc_tokens, doc_encoding = self._parse_tokens(jtokens, dataset)
+
+        # parse entity mentions
+        entities = []
+
+        # parse relations
+        relations = []
+
+        # create document
+        document = dataset.create_document(doc_tokens, entities, relations, doc_encoding)
+
+        return document
+
+    def _parse_tokens(self, jtokens, dataset):
+        doc_tokens = []
+
+        # full document encoding including special tokens ([CLS] and [SEP]) and byte-pair encodings of original tokens
+        doc_encoding = [self._tokenizer.convert_tokens_to_ids('[CLS]')]
+
+        # parse tokens
+        for i, token_phrase in enumerate(jtokens):
+            token_encoding = self._tokenizer.encode(token_phrase, add_special_tokens=False)
+            span_start, span_end = (len(doc_encoding), len(doc_encoding) + len(token_encoding))
+
+            token = dataset.create_token(i, span_start, span_end, token_phrase)
+
+            doc_tokens.append(token)
+            doc_encoding += token_encoding
+
+        doc_encoding += [self._tokenizer.convert_tokens_to_ids('[SEP]')]
+
+        return doc_tokens, doc_encoding

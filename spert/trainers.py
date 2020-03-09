@@ -3,6 +3,7 @@ import math
 import os
 import datetime
 import logging
+import time
 import sys
 
 import torch
@@ -23,7 +24,7 @@ from spert.input_reader import JsonInputReader, BaseInputReader
 from spert.loss import SpERTLoss, SpETLoss, Loss
 from spert.sampling import Sampler
 
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -290,6 +291,77 @@ class SpERTTrainer(BaseTrainer):
 
         self._sampler.join()
 
+    def load_infer_model(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader):
+        args = self.args
+        dataset_label = document_data['guid']
+
+        self._logger.info("Model: %s" % args.model_type)
+
+        # create log csv files
+        self._init_eval_logging(dataset_label)
+
+        # read datasets
+        input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
+        input_reader.read(document_data)
+        self._log_datasets(input_reader)
+
+        # create model
+        model_class = models.get_model(self.args.model_type)
+
+        # load model
+        model = model_class.from_pretrained(self.args.model_path,
+                                            cache_dir=self.args.cache_path,
+                                            # additional model parameters
+                                            cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
+                                            # no node for 'none' class
+                                            relation_types=input_reader.relation_type_count - 1,
+                                            entity_types=input_reader.entity_type_count,
+                                            max_pairs=self.args.max_pairs,
+                                            prop_drop=self.args.prop_drop,
+                                            size_embedding=self.args.size_embedding,
+                                            freeze_transformer=self.args.freeze_transformer)
+
+        model.to(self._device)
+
+    def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader):
+        args = self.args
+        dataset_label = document_data['guid']
+
+        self._logger.info("Model: %s" % args.model_type)
+
+        # create log csv files
+        self._init_eval_logging(dataset_label)
+
+        # read datasets
+        input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
+        input_reader.read(document_data)
+        self._log_datasets(input_reader)
+
+        # create model
+        model_class = models.get_model(self.args.model_type)
+
+        # load model
+        model = model_class.from_pretrained(self.args.model_path,
+                                            cache_dir=self.args.cache_path,
+                                            # additional model parameters
+                                            cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
+                                            # no node for 'none' class
+                                            relation_types=input_reader.relation_type_count - 1,
+                                            entity_types=input_reader.entity_type_count,
+                                            max_pairs=self.args.max_pairs,
+                                            prop_drop=self.args.prop_drop,
+                                            size_embedding=self.args.size_embedding,
+                                            freeze_transformer=self.args.freeze_transformer)
+
+        model.to(self._device)
+
+        # evaluate
+        outputs = self._infer(model, input_reader.get_dataset(dataset_label), input_reader)
+        return outputs
+        # self._logger.info("Logged in: %s" % self._log_path)
+        #
+        # self._sampler.join()
+
     def _train_epoch(self, model: torch.nn.Module, compute_loss: Loss, optimizer: Optimizer, dataset: Dataset,
                      updates_epoch: int, epoch: int, context_size: int, rel_type_count: int):
         self._logger.info("Train epoch: %s" % epoch)
@@ -331,6 +403,61 @@ class SpERTTrainer(BaseTrainer):
 
         return iteration
 
+    def _infer(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
+              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+
+        s_t = time.time()
+        infer_times = []
+        eval_times = []
+        # create batch sampler
+        sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
+                                                    input_reader.context_size, truncate=False)
+        entity_clfs = []
+        with torch.no_grad():
+            model.eval()
+            entities = []
+            batch_count = 0
+
+            # iterate batches
+            total = math.ceil(dataset.document_count / self.args.eval_batch_size)
+            for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
+                # move batch to selected device
+                batch = batch.to(self._device)
+
+                batch_size = batch.encodings.shape[0]
+
+                # run model (forward pass)
+                i_t = time.time()
+                entity_clf, _, _ = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
+                                                  batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
+                                                  evaluate=True)
+                infer_times.append(time.time()-i_t)
+
+                # evaluate batch
+                # get maximum activation (index of predicted entity type)
+                batch_entity_types = entity_clf.argmax(dim=-1)
+                # apply entity sample mask
+                batch_entity_types *= batch.entity_sample_masks.long()
+                e_t = time.time()
+
+                for i in range(batch_size):
+                    sentence_entities = {"spans": [], "types": [], "strings": []}
+                    entity_types = batch_entity_types[i]
+                    valid_entity_indices = entity_types.nonzero().view(-1)
+                    sentence_entities["types"] = entity_types[valid_entity_indices].tolist()
+                    sentence_entities["spans"] = batch.entity_spans[i][valid_entity_indices].tolist()
+                    sentences = [sampler.batches[batch_count][1][0].actual_tokens[index[0]-1:index[1]-1] for index in batch.entity_spans[i][valid_entity_indices].tolist()]
+
+                    sentence_entities["strings"] = [' '.join([token.phrase for token in sentence]) for sentence in sentences]
+                    entity_clfs.append(sentence_entities)
+                eval_times.append(time.time() - e_t)
+                batch_count += 1
+
+        av_it = sum(infer_times)/len(infer_times)
+        av_et = sum(eval_times)/len(eval_times)
+        print(f'Inference time is {time.time()-s_t} seconds for {total} sentences. Average infer time is {av_it} seconds and average evaluate time is {av_et} seconds.')
+        return entity_clfs
+
     def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
               epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
         self._logger.info("Evaluate: %s" % dataset.label)
@@ -356,13 +483,24 @@ class SpERTTrainer(BaseTrainer):
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
-
                 # run model (forward pass)
                 entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
                                                   batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
                                                   evaluate=True)
 
                 # evaluate batch
+                # get maximum activation (index of predicted entity type)
+                batch_entity_types = entity_clf.argmax(dim=-1)
+                # apply entity sample mask
+                batch_entity_types *= batch.entity_sample_masks.long()
+
+                for i in range(batch_size):
+                    valid_entity_indices = batch_entity_types.nonzero().view(-1)
+                    valid_entity_types = batch_entity_types[valid_entity_indices]
+                    valid_entity_spans = batch.entity_spans[i][valid_entity_indices]
+                    valid_entity_scores = torch.gather(entity_clf[i][valid_entity_indices], 1,
+                                                       valid_entity_types.unsqueeze(1)).view(-1)
+
                 evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
 
         global_iteration = epoch * updates_epoch + iteration

@@ -280,6 +280,10 @@ class Document:
         return self._relations
 
     @property
+    def actual_tokens(self):
+        return self._tokens
+
+    @property
     def tokens(self):
         return TokenSpan(self._tokens)
 

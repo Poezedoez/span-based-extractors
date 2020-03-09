@@ -145,18 +145,18 @@ class BaseSampler(ABC):
 
     @property
     @abstractmethod
-    def _batches(self) -> List:
+    def batches(self) -> List:
         pass
 
     def __next__(self):
-        if self._current_batch < len(self._batches):
+        if self._current_batch < len(self.batches):
             if self._processes > 0:
                 # multiprocessing
                 batch, _ = self._results.next()
                 self._semaphore.release()
             else:
                 # no multiprocessing
-                batch, _ = self._mp_func(self._batches[self._current_batch])
+                batch, _ = self._mp_func(self.batches[self._current_batch])
 
             self._current_batch += 1
             return batch
@@ -166,7 +166,7 @@ class BaseSampler(ABC):
     def __iter__(self):
         if self._processes > 0:
             # multiprocessing
-            self._results = self._pool.imap(self._mp_func, self._batches)
+            self._results = self._pool.imap(self._mp_func, self.batches)
         return self
 
 
@@ -196,7 +196,7 @@ class TrainSampler(BaseSampler):
         return prep_batches
 
     @property
-    def _batches(self):
+    def batches(self):
         return self._prep_batches
 
 
@@ -222,7 +222,7 @@ class EvalSampler(BaseSampler):
         return prep_batches
 
     @property
-    def _batches(self):
+    def batches(self):
         return self._prep_batches
 
 
