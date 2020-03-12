@@ -220,6 +220,7 @@ class SpERT(BertPreTrainedModel):
         else:
             return self._forward_eval(*args, **kwargs)
 
+
 class SpET(BertPreTrainedModel):
     """ Span-based model to extract entities"""
 
@@ -302,9 +303,10 @@ class SpET(BertPreTrainedModel):
         if not evaluate:
             return self._forward_train(*args, **kwargs)
         else:
-            return self._forward_eval(*args, **kwargs)    
+            return self._forward_eval(*args, **kwargs)
 
-# Model access
+        # Model access
+
 
 _MODELS = {
     'spert': SpERT,

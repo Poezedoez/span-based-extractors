@@ -28,6 +28,7 @@ from typing import List, Dict, Tuple, Any
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 
+
 class BaseTrainer:
     """ Trainer base class with common methods """
 
@@ -404,7 +405,7 @@ class SpERTTrainer(BaseTrainer):
         return iteration
 
     def _infer(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
-              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+               epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
 
         s_t = time.time()
         infer_times = []
@@ -429,9 +430,9 @@ class SpERTTrainer(BaseTrainer):
                 # run model (forward pass)
                 i_t = time.time()
                 entity_clf, _, _ = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                                  batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
-                                                  evaluate=True)
-                infer_times.append(time.time()-i_t)
+                                         batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
+                                         evaluate=True)
+                infer_times.append(time.time() - i_t)
 
                 # evaluate batch
                 # get maximum activation (index of predicted entity type)
@@ -444,18 +445,23 @@ class SpERTTrainer(BaseTrainer):
                     sentence_entities = {"spans": [], "types": [], "strings": []}
                     entity_types = batch_entity_types[i]
                     valid_entity_indices = entity_types.nonzero().view(-1)
-                    sentence_entities["types"] = entity_types[valid_entity_indices].tolist()
-                    sentence_entities["spans"] = batch.entity_spans[i][valid_entity_indices].tolist()
-                    sentences = [sampler.batches[batch_count][1][0].actual_tokens[index[0]-1:index[1]-1] for index in batch.entity_spans[i][valid_entity_indices].tolist()]
+                    sentence_entities["types"] = [input_reader.get_entity_type(entity_type_id) for entity_type_id in
+                                                  entity_types[valid_entity_indices].tolist()]
+                    sentence_entities["spans"] = [batch.entity_char_spans[i][valid_entity] for valid_entity
+                                                  in valid_entity_indices.tolist()]
+                    sentences = [sampler.batches[batch_count][1][0].actual_tokens[index[0] - 1: index[1] - 1] for index
+                                 in batch.entity_spans[i][valid_entity_indices].tolist()]
 
-                    sentence_entities["strings"] = [' '.join([token.phrase for token in sentence]) for sentence in sentences]
+                    sentence_entities["strings"] = [' '.join([token.phrase for token in sentence]) for sentence in
+                                                    sentences]
                     entity_clfs.append(sentence_entities)
                 eval_times.append(time.time() - e_t)
                 batch_count += 1
 
-        av_it = sum(infer_times)/len(infer_times)
-        av_et = sum(eval_times)/len(eval_times)
-        print(f'Inference time is {time.time()-s_t} seconds for {total} sentences. Average infer time is {av_it} seconds and average evaluate time is {av_et} seconds.')
+        av_it = sum(infer_times) / len(infer_times)
+        av_et = sum(eval_times) / len(eval_times)
+        print(f'Inference time is {time.time() - s_t} seconds for {total} sentences. Average infer time is '
+              f'{av_it} seconds and average evaluate time is {av_et} seconds.')
         return entity_clfs
 
     def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
@@ -493,14 +499,6 @@ class SpERTTrainer(BaseTrainer):
                 batch_entity_types = entity_clf.argmax(dim=-1)
                 # apply entity sample mask
                 batch_entity_types *= batch.entity_sample_masks.long()
-
-                for i in range(batch_size):
-                    valid_entity_indices = batch_entity_types.nonzero().view(-1)
-                    valid_entity_types = batch_entity_types[valid_entity_indices]
-                    valid_entity_spans = batch.entity_spans[i][valid_entity_indices]
-                    valid_entity_scores = torch.gather(entity_clf[i][valid_entity_indices], 1,
-                                                       valid_entity_types.unsqueeze(1)).view(-1)
-
                 evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
 
         global_iteration = epoch * updates_epoch + iteration
@@ -781,7 +779,7 @@ class SpETTrainer(BaseTrainer):
 
             # forward step
             entity_logits = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                              batch.entity_sizes)
+                                  batch.entity_sizes)
 
             # compute loss and optimize parameters
             batch_loss = compute_loss.compute(entity_logits, batch.entity_types, batch.entity_sample_masks)
@@ -822,8 +820,8 @@ class SpETTrainer(BaseTrainer):
 
                 # run model (forward pass)
                 entity_clf = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                                  batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
-                                                  evaluate=True)
+                                   batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
+                                   evaluate=True)
 
                 # evaluate batch
                 evaluator.eval_batch(entity_clf, batch)

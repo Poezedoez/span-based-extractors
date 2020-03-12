@@ -50,7 +50,7 @@ if __name__ == '__main__':
             'In contrast with the normal auto-encoder, denoising auto-encoder (Vincent etal., 2010) could improve the model learning ability by introducing noise in the form of random tokendeleting and swapping in this input sentence',
             'Neural machine translations (NMT) (Bahdanau et al., 2015; Vaswani et al., 2017) have set several state-of-the-art  new  benchmarks  (Bojar  et  al.,  2018;  Barrault  et  al.,  2019)',
             'Our empirical results showthat the UNMT model outperformed the SNMT model, although both of their performances decreasedsignificantly  in  this  scenario.'
-        ] * 100
+        ]
     }
     if args.mode == 'train':
         _train()

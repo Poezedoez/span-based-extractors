@@ -173,10 +173,12 @@ def padded_nonzero(tensor, padding=0):
 def swap(v1, v2):
     return v2, v1
 
+
 def is_whitespace(c):
-    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F or c=="\xa0":
+    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F or c == "\xa0":
         return True
     return False
+
 
 def split(text):
     doc_tokens = []
@@ -195,6 +197,6 @@ def split(text):
             else:
                 doc_tokens[-1] += c
                 new_token = False
-        char_to_word_offset.append(len(doc_tokens)-1)
-    
+        char_to_word_offset.append(len(doc_tokens) - 1)
+
     return doc_tokens, char_to_word_offset

@@ -5,7 +5,6 @@ try:
 except ImportError:
     tensorboardX = None
 
-
 try:
     import jinja2
 except ImportError:
