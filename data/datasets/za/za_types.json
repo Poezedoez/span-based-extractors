@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "dataset": {
+      "short": "dataset",
+      "verbose": "dataset"
+    },
+    "datatype": {
+      "short": "datatype",
+      "verbose": "datatype"
+    },
+    "metric": {
+      "short": "metric",
+      "verbose": "metric"
+    },
+    "hardware": {
+      "short": "hardware",
+      "verbose": "hardware"
+    },
+    "learning_paradigm": {
+      "short": "learning_paradigm",
+      "verbose": "learning_paradigm"
+    },
+    "software_framework": {
+      "short": "software_framework",
+      "verbose": "software_framework"
+    },
+    "architectural_element": {
+      "short": "architectural_element",
+      "verbose": "architectural_element"
+    },
+    "machine_learning_algorithm": {
+      "short": "machine_learning_algorithm",
+      "verbose": "machine_learning_algorithm"
+    },
+    "application_area": {
+      "short": "application_area",
+      "verbose": "application_area"
+    },
+    "technique": {
+      "short": "technique",
+      "verbose": "technique"
+    }
+  },
+  "relations": {
+  }
+}
