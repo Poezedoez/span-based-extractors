@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=experiments
+#SBATCH --job-name=za_train
 #SBATCH --time=6:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
