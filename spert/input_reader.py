@@ -253,6 +253,8 @@ class StringInputReader(BaseInputReader):
         # parse tokens
         doc_tokens, doc_char_tokens, doc_encoding = self._parse_tokens(jtokens, dataset, offsets)
 
+        # print(doc_tokens)
+
         # parse entity mentions
         entities = []
 

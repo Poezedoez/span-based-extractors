@@ -418,19 +418,6 @@ class SpERTTrainer(BaseTrainer):
                     sequences.append(sampler.batches[batch_count][1][i].actual_tokens)
                     entities.append(batch_entities[i])
                     relations.append(batch_relations[i])
-                    # sentence_entities = {"spans": [], "types": [], "strings": []}
-                    # entity_types = batch_entity_types[i]
-                    # valid_entity_indices = entity_types.nonzero().view(-1)
-                    # sentence_entities["types"] = [input_reader.get_entity_type(entity_type_id) for entity_type_id in
-                    #                               entity_types[valid_entity_indices].tolist()]
-                    # sentence_entities["spans"] = [batch.entity_char_spans[i][valid_entity] for valid_entity
-                    #                               in valid_entity_indices.tolist()]
-                    # sentences = [sampler.batches[batch_count][1][0].actual_tokens[index[0] - 1: index[1] - 1] for index
-                    #              in batch.entity_spans[i][valid_entity_indices].tolist()]
-
-                    # sentence_entities["strings"] = [' '.join([token.phrase for token in sentence]) for sentence in
-                    #                                 sentences]
-                    # entity_clfs.append(sentence_entities)
                 eval_times.append(time.time() - e_t)
                 batch_count += 1
 
