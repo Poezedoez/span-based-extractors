@@ -254,16 +254,5 @@ def convert_to_json_dataset(sequences, entities, relations, output_path='data/sa
     with open(output_path+'dataset.json', 'w', encoding='utf-8') as json_file:
         json.dump(dataset, json_file)
 
-    # batch_entities.append([(start+i, end+i, entity_type.short_name, score) for (start, end, entity_type, score) in sample_entities])
-    # relation_samples = []
-    # for relation in sample_pred_relations:
-    #     entity_head = relation[0]
-    #     entity_tail = relation[1]
-    #     type_ = relation[3]
-    #     tuple_ = (
-    #         (entity_head[0]+i, entity_head[1]+i, entity_head[2].short_name),
-    #         (entity_tail[0]+i, entity_tail[1]+i, entity_tail[2].short_name),
-    #         type_.short_name
-    #     )
-    #     relation_samples.append(tuple_) 
+    return dataset
 

@@ -33,8 +33,16 @@ def __infer(run_args, example_data):
     # Document data is a dictionary with the guid and the sentences of a document
     sequences, entities, relations = trainer.infer(document_data=example_data, types_path=run_args.types_path,
                  input_reader_cls=input_reader.StringInputReader)
+    print()
+    print("Raw output:")
     print(sequences, entities, relations)
-    util.convert_to_json_dataset(sequences, entities, relations, run_args.inference_path)
+    print()
+    print("Converted json output:")
+    dataset = util.convert_to_json_dataset(sequences, entities, relations, run_args.inference_path)
+    for sentence in dataset:
+        print(sentence["tokens"])
+        print(sentence["entities"])
+        print(sentence["relations"])
 
 def _infer(example_data):
     arg_parser = eval_argparser()
