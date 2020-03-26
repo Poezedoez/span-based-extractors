@@ -2,10 +2,10 @@
 #SBATCH --job-name=za_train
 #SBATCH --time=8:00:00
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=16
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:4
-#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --partition=gpu_shared
 #SBATCH --mem=16G
 #SBATCH --mail-type=END
 #SBATCH --mail-user=ragger.jonkers@student.uva.nl
@@ -20,6 +20,6 @@ source activate lisaenv
 cp -r $HOME/spert/ $TMPDIR
 cd $TMPDIR/spert
 
-python spert.py train --config configs/za_train_combined.conf
+python spert.py train --config configs/za_train_combined.conf >> spert_donderdag.txt
 
 cp -r * $HOME/spert/
