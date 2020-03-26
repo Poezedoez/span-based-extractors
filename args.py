@@ -86,9 +86,21 @@ def eval_argparser():
     arg_parser = argparse.ArgumentParser()
 
     # Input
-    arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset")
-    arg_parser.add_argument('--inference_path', type=str, help="Output path of inferred sequences")
+    arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset to evaluate")
 
     _add_common_args(arg_parser)
 
     return arg_parser
+
+def infer_parser():
+    arg_parser = argparse.ArgumentParser()
+
+    # Input
+    arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset to do inference on")
+
+    # Output
+    arg_parser.add_argument('--inference_path', type=str, help="Output path of inferred sequences")
+
+    _add_common_args(arg_parser)
+
+    return arg_parser    
