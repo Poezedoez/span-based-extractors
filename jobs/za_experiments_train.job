@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=semeval_train
-#SBATCH --time=8:00:00
+#SBATCH --time=4:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks-per-node=1
@@ -20,6 +20,15 @@ source activate lisaenv
 cp -r $HOME/spert/ $TMPDIR
 cd $TMPDIR/spert
 
-python spert.py train --config configs/za_train_combined.conf
+python spert.py train --config configs/za_train_string.conf &
+string_process=$! &
+python spert.py train --config configs/za_train_embedding.conf &
+embedding_process=$! &
+python spert.py train --config configs/za_train_combined.conf &
+combined_process=$! &
+
+wait $string_process
+wait $embedding_process
+wait $combined_process
 
 cp -r * $HOME/spert/
