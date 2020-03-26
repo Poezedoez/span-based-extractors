@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import List
+from typing import List, Tuple
 
 
 class RelationType:
@@ -121,6 +121,52 @@ class Token:
         return self._phrase
 
 
+class CharToken:
+    def __init__(self, tid: int, index: int, char_start: int, char_end: int, phrase: str):
+        self._tid = tid  # ID within the corresponding dataset
+        self._index = index  # original token index in document
+
+        self._char_start = char_start
+        self._char_end = char_end
+        self._phrase = phrase
+        self._char_start = char_start
+        self._char_end = char_end
+
+    @property
+    def index(self):
+        return self._index
+
+    @property
+    def char_start(self):
+        return self._char_start
+
+    @property
+    def char_end(self):
+        return self._char_end
+
+    @property
+    def span(self):
+        return self._char_start, self._char_end
+
+    @property
+    def phrase(self):
+        return self._phrase
+
+    def __eq__(self, other):
+        if isinstance(other, Token):
+            return self._tid == other._tid
+        return False
+
+    def __hash__(self):
+        return hash(self._tid)
+
+    def __str__(self):
+        return self._phrase
+
+    def __repr__(self):
+        return self._phrase
+
+
 class TokenSpan:
     def __init__(self, tokens):
         self._tokens = tokens
@@ -150,6 +196,35 @@ class TokenSpan:
         return len(self._tokens)
 
 
+class CharTokenSpan:
+    def __init__(self, tokens):
+        self._tokens = tokens
+
+    @property
+    def char_start(self):
+        return self._tokens[0].char_start
+
+    @property
+    def char_end(self):
+        return self._tokens[-1].char_end
+
+    @property
+    def char_span(self):
+        return self.char_start, self.char_end
+
+    def __getitem__(self, s):
+        if isinstance(s, slice):
+            return CharTokenSpan(self._tokens[s.start:s.stop:s.step])
+        else:
+            return self._tokens[s]
+
+    def __iter__(self):
+        return iter(self._tokens)
+
+    def __len__(self):
+        return len(self._tokens)
+
+
 class Entity:
     def __init__(self, eid: int, entity_type: EntityType, tokens: List[Token], phrase: str):
         self._eid = eid  # ID within the corresponding dataset
@@ -168,7 +243,7 @@ class Entity:
 
     @property
     def tokens(self):
-        return TokenSpan(self._tokens)
+        return CharTokenSpan(self._tokens)
 
     @property
     def span_start(self):
@@ -256,8 +331,8 @@ class Relation:
 
 
 class Document:
-    def __init__(self, doc_id: int, tokens: List[Token], entities: List[Entity], relations: List[Relation],
-                 encoding: List[int]):
+    def __init__(self, doc_id: int, tokens: List[Token], entities: List[Entity],
+                 relations: List[Relation], encoding: List[int]):
         self._doc_id = doc_id  # ID within the corresponding dataset
 
         self._tokens = tokens
@@ -278,6 +353,10 @@ class Document:
     @property
     def relations(self):
         return self._relations
+
+    @property
+    def actual_tokens(self):
+        return self._tokens
 
     @property
     def tokens(self):

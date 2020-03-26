@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 import string
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -173,10 +174,12 @@ def padded_nonzero(tensor, padding=0):
 def swap(v1, v2):
     return v2, v1
 
+
 def is_whitespace(c):
-    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F or c=="\xa0":
+    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F or c == "\xa0":
         return True
     return False
+
 
 def split(text):
     doc_tokens = []
@@ -195,6 +198,61 @@ def split(text):
             else:
                 doc_tokens[-1] += c
                 new_token = False
-        char_to_word_offset.append(len(doc_tokens)-1)
-    
+        char_to_word_offset.append(len(doc_tokens) - 1)
+
     return doc_tokens, char_to_word_offset
+
+def glue_subtokens(subtokens, remove_special_tokens=False):
+    glued_tokens = []
+    tok2glued = []
+    glued2tok = []
+    extra = 1 if remove_special_tokens else 0
+    for i, token in enumerate(subtokens):
+        if token.startswith('##'):
+            glued_tokens[len(glued_tokens) - 1] = glued_tokens[len(glued_tokens) - 1] + token.replace('##', '')
+        else:
+            glued2tok.append(i)
+            glued_tokens.append(token)
+
+        tok2glued.append(len(glued_tokens) - 1)
+
+    return glued_tokens[extra:len(glued_tokens)-extra], tok2glued, glued2tok
+
+def convert_to_json_dataset(sequences, entities, relations, output_path='data/save/za_inference/'):
+    dataset = []
+    
+    # adjust for special token offset
+    i = -1
+
+    for sequence, sample_entities, sample_relations in zip(sequences, entities, relations):
+        glued_tokens, tok2glued, _ = glue_subtokens([str(s) for s in sequence], remove_special_tokens=False)
+
+        # entities 
+        json_entities = []
+        position_mapping = {}
+        for start, end, type_, _ in sample_entities:
+            entity_start = tok2glued[start]+i
+            entity_end = tok2glued[end]+i
+            entity_type = type_.short_name
+            position_mapping[(entity_start, entity_end, entity_type)] = len(json_entities)
+            json_entities.append({"start": entity_start, "end": entity_end, "type": entity_type})
+
+        # relations
+        json_relations = []
+        for head_entity, tail_entity, type_ in sample_relations:
+            head_start, head_end, head_type = head_entity
+            tail_start, tail_end, tail_type = tail_entity
+            relation_head = position_mapping[(head_start, head_end, head_type)]
+            relation_tail = position_mapping[(tail_start, tail_end, tail_type)]
+            relation_type = type_.short_name
+            json_relations.append({"head": relation_head, "tail": relation_tail, "type": relation_type})
+
+        dataset.append({"tokens": glued_tokens, "entities": json_entities, "relations": json_relations, "orig_id": hash("".join(glued_tokens))})
+
+    directory = os.path.dirname(output_path)
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    with open(output_path+'dataset.json', 'w', encoding='utf-8') as json_file:
+        json.dump(dataset, json_file)
+
+    return dataset
+

@@ -52,7 +52,7 @@ class TrainTensorBatch:
 class EvalTensorBatch:
     def __init__(self, encodings: torch.tensor, ctx_masks: torch.tensor,
                  entity_masks: torch.tensor, entity_sizes: torch.tensor, entity_spans: torch.tensor,
-                 entity_sample_masks: torch.tensor):
+                 entity_sample_masks: torch.tensor, entity_char_spans: List[List[int]]):
         self.encodings = encodings
         self.ctx_masks = ctx_masks
 
@@ -60,6 +60,7 @@ class EvalTensorBatch:
         self.entity_sizes = entity_sizes
         self.entity_spans = entity_spans
         self.entity_sample_masks = entity_sample_masks
+        self.entity_char_spans = entity_char_spans
 
     def to(self, device):
         encodings = self.encodings.to(device)
@@ -70,7 +71,8 @@ class EvalTensorBatch:
         entity_spans = self.entity_spans.to(device)
         entity_sample_masks = self.entity_sample_masks.to(device)
 
-        return EvalTensorBatch(encodings, ctx_masks, entity_masks, entity_sizes, entity_spans, entity_sample_masks)
+        return EvalTensorBatch(encodings, ctx_masks, entity_masks, entity_sizes, entity_spans, entity_sample_masks,
+                               self.entity_char_spans)
 
 
 class TrainTensorSample:
@@ -91,13 +93,14 @@ class TrainTensorSample:
 
 class EvalTensorSample:
     def __init__(self, encoding: torch.tensor, ctx_mask: torch.tensor, entity_masks: torch.tensor,
-                 entity_sizes: torch.tensor, entity_spans: torch.tensor):
+                 entity_sizes: torch.tensor, entity_spans: torch.tensor, entity_char_spans):
         self.encoding = encoding
         self.ctx_mask = ctx_mask
 
         self.entity_masks = entity_masks
         self.entity_sizes = entity_sizes
         self.entity_spans = entity_spans
+        self.entity_char_spans = entity_char_spans
 
 
 class Sampler:
@@ -145,18 +148,18 @@ class BaseSampler(ABC):
 
     @property
     @abstractmethod
-    def _batches(self) -> List:
+    def batches(self) -> List:
         pass
 
     def __next__(self):
-        if self._current_batch < len(self._batches):
+        if self._current_batch < len(self.batches):
             if self._processes > 0:
                 # multiprocessing
                 batch, _ = self._results.next()
                 self._semaphore.release()
             else:
                 # no multiprocessing
-                batch, _ = self._mp_func(self._batches[self._current_batch])
+                batch, _ = self._mp_func(self.batches[self._current_batch])
 
             self._current_batch += 1
             return batch
@@ -166,7 +169,7 @@ class BaseSampler(ABC):
     def __iter__(self):
         if self._processes > 0:
             # multiprocessing
-            self._results = self._pool.imap(self._mp_func, self._batches)
+            self._results = self._pool.imap(self._mp_func, self.batches)
         return self
 
 
@@ -196,7 +199,7 @@ class TrainSampler(BaseSampler):
         return prep_batches
 
     @property
-    def _batches(self):
+    def batches(self):
         return self._prep_batches
 
 
@@ -222,7 +225,7 @@ class EvalSampler(BaseSampler):
         return prep_batches
 
     @property
-    def _batches(self):
+    def batches(self):
         return self._prep_batches
 
 
@@ -363,6 +366,7 @@ def _create_eval_sample(doc, max_span_size, context_size):
     entity_spans = []
     entity_masks = []
     entity_sizes = []
+    entity_char_spans = []
 
     for size in range(1, max_span_size + 1):
         for i in range(0, (token_count - size) + 1):
@@ -370,6 +374,7 @@ def _create_eval_sample(doc, max_span_size, context_size):
             entity_spans.append(span)
             entity_masks.append(create_entity_mask(*span, context_size))
             entity_sizes.append(size)
+            entity_char_spans.append(doc.char_tokens[i:i + size].char_span)
     # create tensors
     # token indices
     _encoding = encoding
@@ -386,7 +391,7 @@ def _create_eval_sample(doc, max_span_size, context_size):
     entity_spans = torch.tensor(entity_spans, dtype=torch.long)
 
     return EvalTensorSample(encoding=encoding, ctx_mask=ctx_mask, entity_masks=entity_masks,
-                            entity_sizes=entity_sizes, entity_spans=entity_spans)
+                            entity_sizes=entity_sizes, entity_spans=entity_spans, entity_char_spans=entity_char_spans)
 
 
 def _create_train_batch(samples):
@@ -484,6 +489,7 @@ def _create_eval_batch(samples):
     batch_entity_sizes = []
     batch_entity_spans = []
     batch_entity_sample_masks = []
+    batch_entity_char_spans = []
 
     for sample in samples:
         encoding = sample.encoding
@@ -492,6 +498,7 @@ def _create_eval_batch(samples):
         entity_masks = sample.entity_masks
         entity_sizes = sample.entity_sizes
         entity_spans = sample.entity_spans
+        entity_char_spans = sample.entity_char_spans
 
         # tensors to mask entity samples of batch
         # since samples are stacked into batches, "padding" entities possibly must be created
@@ -512,6 +519,7 @@ def _create_eval_batch(samples):
         batch_entity_sizes.append(entity_sizes)
         batch_entity_spans.append(entity_spans)
         batch_entity_sample_masks.append(entity_sample_masks)
+        batch_entity_char_spans.append(entity_char_spans)
 
     # stack samples
     encodings = util.padded_stack(batch_encodings)
@@ -524,7 +532,7 @@ def _create_eval_batch(samples):
 
     batch = EvalTensorBatch(encodings=encodings, ctx_masks=ctx_masks, entity_masks=batch_entity_masks,
                             entity_sizes=batch_entity_sizes, entity_spans=batch_entity_spans,
-                            entity_sample_masks=batch_entity_sample_masks)
+                            entity_sample_masks=batch_entity_sample_masks, entity_char_spans=batch_entity_char_spans)
 
     return batch
 

@@ -58,6 +58,8 @@ def train_argparser():
                             help="If true, evaluate validation set before training")
     arg_parser.add_argument('--save_optimizer', action='store_true', default=False,
                             help="Save optimizer alongside model")
+    arg_parser.add_argument('--store_predictions', action='store_true', default=False,
+                            help="If true, store predictions on disc (in log directory)")
     arg_parser.add_argument('--train_log_iter', type=int, default=1, help="Log training process every x iterations")
     arg_parser.add_argument('--final_eval', action='store_true', default=False,
                             help="Evaluate the model only after training, not at every epoch")
@@ -85,6 +87,7 @@ def eval_argparser():
 
     # Input
     arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset")
+    arg_parser.add_argument('--inference_path', type=str, help="Output path of inferred sequences")
 
     _add_common_args(arg_parser)
 

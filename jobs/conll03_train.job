@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=experiments
-#SBATCH --time=6:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:1
-#SBATCH --partition=gpu_shared
+#SBATCH --gres=gpu
+#SBATCH --partition=gpu
 #SBATCH --mem=16G
 #SBATCH --mail-type=END
 #SBATCH --mail-user=ragger.jonkers@student.uva.nl
@@ -20,6 +20,7 @@ source activate lisaenv
 cp -r $HOME/spert/ $TMPDIR
 cd $TMPDIR/spert
 
-python spert.py train --config configs/conll03_train.conf
+RUN_NAME="`date +%d_%m_%Y_%H_%M_%S`";
+python spert.py train --config configs/conll03_train.conf >> "log_spert_${RUN_NAME}.txt"
 
 cp -r * $HOME/spert/

@@ -50,6 +50,7 @@ class SpERTLoss(Loss):
 
         return train_loss.item()
 
+
 class SpETLoss(Loss):
     def __init__(self, entity_criterion, model, optimizer, scheduler, max_grad_norm):
         self._entity_criterion = entity_criterion

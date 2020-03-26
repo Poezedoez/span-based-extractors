@@ -42,7 +42,7 @@ class Evaluator:
         self._convert_gt(self._dataset.documents)
 
     def eval_batch(self, batch_entity_clf: torch.tensor, batch_rel_clf: torch.tensor,
-                   batch_rels: torch.tensor, batch: EvalTensorBatch):
+                   batch_rels: torch.tensor, batch: EvalTensorBatch, return_conversions=False):
         batch_size = batch_rel_clf.shape[0]
         rel_class_count = batch_rel_clf.shape[2]
 
@@ -57,6 +57,8 @@ class Evaluator:
         if self._rel_filter_threshold > 0:
             batch_rel_clf[batch_rel_clf < self._rel_filter_threshold] = 0
 
+        batch_entities = []
+        batch_relations = []
         for i in range(batch_size):
             # get model predictions for sample
             rel_clf = batch_rel_clf[i]
@@ -94,6 +96,12 @@ class Evaluator:
             sample_pred_entities = self._convert_pred_entities(valid_entity_types, valid_entity_spans,
                                                                valid_entity_scores)
             self._pred_entities.append(sample_pred_entities)
+
+            batch_entities.append(sample_pred_entities)
+            batch_relations.append(sample_pred_relations)
+            
+
+        return batch_entities, batch_relations
 
     def compute_scores(self):
         print("Evaluation")
@@ -438,7 +446,7 @@ class Evaluator:
         ctx_after = self._text_encoder.decode(segments[4])
 
         html = (ctx_before + e1_tag + e1 + '</span> '
-                     + ctx_between + e2_tag + e2 + '</span> ' + ctx_after)
+                + ctx_between + e2_tag + e2 + '</span> ' + ctx_after)
         html = self._prettify(html)
 
         return html
