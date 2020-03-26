@@ -331,12 +331,11 @@ class Relation:
 
 
 class Document:
-    def __init__(self, doc_id: int, tokens: List[Token], char_tokens: List[CharToken], entities: List[Entity],
+    def __init__(self, doc_id: int, tokens: List[Token], entities: List[Entity],
                  relations: List[Relation], encoding: List[int]):
         self._doc_id = doc_id  # ID within the corresponding dataset
 
         self._tokens = tokens
-        self._char_tokens = char_tokens
         self._entities = entities
         self._relations = relations
 
@@ -362,10 +361,6 @@ class Document:
     @property
     def tokens(self):
         return TokenSpan(self._tokens)
-
-    @property
-    def char_tokens(self):
-        return CharTokenSpan(self._char_tokens)
 
     @property
     def encoding(self):
@@ -432,14 +427,13 @@ class Dataset:
     def iterate_relations(self, batch_size, order=None, truncate=False):
         return BatchIterator(self.relations, batch_size, order=order, truncate=truncate)
 
-    def create_token(self, idx, span_start, span_end, phrase, char_start, char_end) -> Tuple[Token, CharToken]:
+    def create_token(self, idx, span_start, span_end, phrase) -> Token:
         token = Token(self._tid, idx, span_start, span_end, phrase)
-        char_token = CharToken(self._tid, idx, char_start, char_end, phrase)
         self._tid += 1
-        return token, char_token
+        return token
 
-    def create_document(self, tokens, char_tokens, entity_mentions, relations, doc_encoding) -> Document:
-        document = Document(self._doc_id, tokens, char_tokens, entity_mentions, relations, doc_encoding)
+    def create_document(self, tokens, entity_mentions, relations, doc_encoding) -> Document:
+        document = Document(self._doc_id, tokens, entity_mentions, relations, doc_encoding)
         self._documents[self._doc_id] = document
         self._doc_id += 1
 
