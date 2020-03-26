@@ -45,7 +45,7 @@ def __infer(run_args, example_data):
         print(sentence["relations"])
 
 def _infer(example_data):
-    arg_parser = eval_argparser()
+    arg_parser = infer_argparser()
     process_configs(target=__infer, arg_parser=arg_parser, data=example_data)
 
 if __name__ == '__main__':

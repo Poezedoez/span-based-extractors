@@ -11,14 +11,6 @@ import numpy as np
 
 from spert import util
 from spert.entities import Dataset, EntityType, RelationType, Entity, Relation, Document
-from spert.tokenizer_offsets import tokenize_with_offsets, detokenize_for_offsets
-
-setattr(BertTokenizer, 'splitter_pat',
-        re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""))
-setattr(BertTokenizer, 'special_pat_str', '')
-setattr(BertTokenizer, 'special_pat', None)
-setattr(BertTokenizer, 'detokenize_for_offsets', detokenize_for_offsets)
-setattr(BertTokenizer, 'tokenize_with_offsets', tokenize_with_offsets)
 
 
 class BaseInputReader(ABC):

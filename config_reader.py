@@ -5,12 +5,11 @@ import multiprocessing as mp
 def process_configs(target, arg_parser, data=None):
     args, _ = arg_parser.parse_known_args()
     ctx = mp.get_context('spawn')
-
     for run_args, _run_config, _run_repeat in _yield_configs(arg_parser, args):
         if data:
             p = ctx.Process(target=target, args=(run_args, data))
         else:
-            p = ctx.Process(target=target, args=(run_args))
+            p = ctx.Process(target=target, args=(run_args,))
         p.start()
         p.join()
 

@@ -148,18 +148,18 @@ class BaseSampler(ABC):
 
     @property
     @abstractmethod
-    def batches(self) -> List:
+    def _batches(self) -> List:
         pass
 
     def __next__(self):
-        if self._current_batch < len(self.batches):
+        if self._current_batch < len(self._batches):
             if self._processes > 0:
                 # multiprocessing
                 batch, _ = self._results.next()
                 self._semaphore.release()
             else:
                 # no multiprocessing
-                batch, _ = self._mp_func(self.batches[self._current_batch])
+                batch, _ = self._mp_func(self._batches[self._current_batch])
 
             self._current_batch += 1
             return batch
@@ -169,7 +169,7 @@ class BaseSampler(ABC):
     def __iter__(self):
         if self._processes > 0:
             # multiprocessing
-            self._results = self._pool.imap(self._mp_func, self.batches)
+            self._results = self._pool.imap(self._mp_func, self._batches)
         return self
 
 
@@ -199,7 +199,7 @@ class TrainSampler(BaseSampler):
         return prep_batches
 
     @property
-    def batches(self):
+    def _batches(self):
         return self._prep_batches
 
 
@@ -225,7 +225,7 @@ class EvalSampler(BaseSampler):
         return prep_batches
 
     @property
-    def batches(self):
+    def _batches(self):
         return self._prep_batches
 
 
@@ -302,8 +302,8 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
     # use only strong negative relations, i.e. pairs of actual (labeled) entities that are not related
     neg_rel_spans = []
 
-    for i1, s1 in enumerate(pos_entity_spans):
-        for i2, s2 in enumerate(pos_entity_spans):
+    for _, s1 in enumerate(pos_entity_spans):
+        for _, s2 in enumerate(pos_entity_spans):
             rev = (s2, s1)
             rev_symmetric = rev in pos_rel_spans and pos_rel_types[pos_rel_spans.index(rev)].symmetric
 
