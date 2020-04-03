@@ -1,18 +1,16 @@
 import copy
 import multiprocessing as mp
 
-
-def process_configs(target, arg_parser, data=None):
+def process_configs(target, arg_parser):
     args, _ = arg_parser.parse_known_args()
     ctx = mp.get_context('spawn')
+    q = mp.Queue # queue to store return values
     for run_args, _run_config, _run_repeat in _yield_configs(arg_parser, args):
-        if data:
-            p = ctx.Process(target=target, args=(run_args, data))
-        else:
-            p = ctx.Process(target=target, args=(run_args,))
+        p = ctx.Process(target=target, args=(run_args, q))
         p.start()
         p.join()
 
+    return q
 
 def _read_config(path):
     lines = open(path).readlines()

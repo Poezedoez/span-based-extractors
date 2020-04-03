@@ -1,17 +1,18 @@
 import argparse
 
-from args import train_argparser, eval_argparser
+from args import train_argparser, eval_argparser, infer_argparser
 from config_reader import process_configs
 from spert import input_reader
 from spert.trainers import SpERTTrainer
 from spert import util
+
+def train_test()
 
 
 def __train(run_args):
     trainer = SpERTTrainer(run_args)
     trainer.train(train_path=run_args.train_path, valid_path=run_args.valid_path,
                   types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
-
 
 def _train():
     arg_parser = train_argparser()
@@ -23,13 +24,28 @@ def __eval(run_args):
     trainer.eval(dataset_path=run_args.dataset_path, types_path=run_args.types_path,
                  input_reader_cls=input_reader.JsonInputReader)
 
-
 def _eval():
     arg_parser = eval_argparser()
     process_configs(target=__eval, arg_parser=arg_parser)
 
-def __infer(run_args, example_data):
+def load_inference_model()
+    arg_parser = infer_argparser()
+    queue = process_configs(target=_infer, arg_parser=arg_parser)
+    model = queue.get()
+    
+    return model
+
+def __infer(run_args, queue):
     trainer = SpERTTrainer(run_args)
+    
+    # Store trainer in multiprocessing queue
+    queue.put(trainer)
+
+def _infer():
+    arg_parser = infer_argparser()
+    process_configs(target=__infer, arg_parser=arg_parser)
+
+def infer(document):
     # Document data is a dictionary with the guid and the sentences of a document
     sequences, entities, relations = trainer.infer(document_data=example_data, types_path=run_args.types_path,
                  input_reader_cls=input_reader.StringInputReader)
@@ -43,10 +59,6 @@ def __infer(run_args, example_data):
         print(sentence["tokens"])
         print(sentence["entities"])
         print(sentence["relations"])
-
-def _infer(example_data):
-    arg_parser = infer_argparser()
-    process_configs(target=__infer, arg_parser=arg_parser, data=example_data)
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(add_help=False)
