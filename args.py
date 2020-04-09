@@ -38,6 +38,7 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--size_embedding', type=int, default=25, help="Dimensionality of size embedding")
     arg_parser.add_argument('--prop_drop', type=float, default=0.1, help="Probability of dropout used in SpERT")
     arg_parser.add_argument('--freeze_transformer', action='store_true', default=False, help="Freeze BERT weights")
+    arg_parser.add_argument('--timestamp_given', action='store_true', default=False, help="timestamp is given, use raw save path")
 
     # Misc
     arg_parser.add_argument('--seed', type=int, default=None, help="Seed")
@@ -92,15 +93,25 @@ def eval_argparser():
 
     return arg_parser
 
-def infer_parser():
+def infer_argparser():
     arg_parser = argparse.ArgumentParser()
 
-    # Input
-    arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset to do inference on")
+    # # Input
+    # arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset to do inference on")
 
-    # Output
-    arg_parser.add_argument('--inference_path', type=str, help="Output path of inferred sequences")
+    # # Output
+    # arg_parser.add_argument('--inference_path', type=str, help="Output path of inferred sequences")
 
     _add_common_args(arg_parser)
 
     return arg_parser    
+
+def map_args(parser, args):
+    base_args, _ = parser.parse_known_args()
+
+    # args wrapper -> args spert
+    base_args.config = args.config
+    # base_args.model_path = args.tokenizer_path
+
+
+    return base_args
