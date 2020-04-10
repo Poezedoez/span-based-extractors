@@ -218,7 +218,8 @@ def glue_subtokens(subtokens, remove_special_tokens=False):
 
     return glued_tokens[extra:len(glued_tokens)-extra], tok2glued, glued2tok
 
-def convert_to_json_dataset(sequences, entities, relations, output_path='data/save/za_inference/'):
+def convert_to_json_dataset(raw_input, output_path='data/save/za_inference/', save=False):
+    sequences, entities, relations = raw_input
     dataset = []
     
     # adjust for special token offset
@@ -249,10 +250,11 @@ def convert_to_json_dataset(sequences, entities, relations, output_path='data/sa
 
         dataset.append({"tokens": glued_tokens, "entities": json_entities, "relations": json_relations, "orig_id": hash("".join(glued_tokens))})
 
-    directory = os.path.dirname(output_path)
-    Path(directory).mkdir(parents=True, exist_ok=True)
-    with open(output_path+'dataset.json', 'w', encoding='utf-8') as json_file:
-        json.dump(dataset, json_file)
+    if save:
+        directory = os.path.dirname(output_path)
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        with open(output_path+'inference_output.json', 'w', encoding='utf-8') as json_file:
+            json.dump(dataset, json_file)
 
     return dataset
 

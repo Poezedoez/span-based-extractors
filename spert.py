@@ -34,32 +34,36 @@ def load_inference_model(args):
     
     return model
 
-def _load_inference_model():
+def _infer(document):
+    """
+    When called from command line.
+    This function is for testing only, because it 
+    loads the model at every inference call
+    """
     arg_parser = infer_argparser()
     run_args = process_configs_serial(arg_parser)
     model = SpERTTrainer(run_args)
     print("SpERT ready for inference.")
     
-    return model, run_args
+    infer(model, document, run_args.types_path)
 
-def infer(model, document, types):
-    # Document data is a dictionary with the guid and the sentences of a document
-    sequences, entities, relations = model.infer(document_data=document, types_path=types,
+def infer(model, document, types, verbose=False):
+    """
+    Do inference with the model on the given document.
+    """
+    raw_output = model.infer(document_data=document, types_path=types,
                  input_reader_cls=input_reader.StringInputReader)
-    print()
-    print("Raw output:")
-    print(sequences, entities, relations)
-    print()
+    json_format = util.convert_to_json_dataset(raw_output)
+    if verbose:
+        _print_inference_results(json_format)
+
+def _print_inference_results(json_data):
     print("Converted json output:")
-    dataset = util.convert_to_json_dataset(sequences, entities, relations)
-    for sentence in dataset:
+    for sentence in json_data:
         print(sentence["tokens"])
         print(sentence["entities"])
         print(sentence["relations"])
-
-def _test_inference(document):
-    model, run_args = _load_inference_model()
-    infer(model, document, run_args.types_path)
+        print()
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(add_help=False)
@@ -78,6 +82,6 @@ if __name__ == '__main__':
     elif args.mode == 'eval':
         _eval()
     elif args.mode == 'infer':
-        _test_inference(example_data)
+        _infer(example_data)
     else:
         raise Exception("Mode not in ['train', 'eval'], e.g. 'python spert.py train ...'")
