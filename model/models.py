@@ -4,8 +4,8 @@ from transformers import BertConfig
 from transformers import BertModel
 from transformers import BertPreTrainedModel
 
-from spert import sampling
-from spert import util
+from model import sampling
+from model import util
 
 
 def get_token(h: torch.tensor, x: torch.tensor, token: int):

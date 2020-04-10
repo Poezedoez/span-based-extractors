@@ -6,10 +6,10 @@ import torch
 from sklearn.metrics import precision_recall_fscore_support as prfs
 from transformers import BertTokenizer
 
-from spert.entities import Document, Dataset, EntityType
-from spert.input_reader import JsonInputReader
-from spert.opt import jinja2
-from spert.sampling import EvalTensorBatch
+from model.entities import Document, Dataset, EntityType
+from model.input_reader import JsonInputReader
+from model.opt import jinja2
+from model.sampling import EvalTensorBatch
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 

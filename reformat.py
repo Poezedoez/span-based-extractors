@@ -1,5 +1,5 @@
 import json
-from spert.util import split
+from model.util import split
 import os
 
 def reformat_conll03(input_path, output_path):

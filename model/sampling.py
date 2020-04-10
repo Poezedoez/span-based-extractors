@@ -6,8 +6,8 @@ import time
 import torch
 from torch import multiprocessing
 
-from spert import util
-from spert.entities import Dataset
+from model import util
+from model.entities import Dataset
 
 multiprocessing.set_sharing_strategy('file_system')
 

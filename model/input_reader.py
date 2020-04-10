@@ -9,9 +9,16 @@ from transformers import BertTokenizer
 import regex as re
 import numpy as np
 
-from spert import util
-from spert.entities import Dataset, EntityType, RelationType, Entity, Relation, Document
+from model import util
+from model.entities import Dataset, EntityType, RelationType, Entity, Relation, Document
+from model.tokenizer_offsets import tokenize_with_offsets, detokenize_for_offsets
 
+setattr(BertTokenizer, 'splitter_pat',
+        re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""))
+setattr(BertTokenizer, 'special_pat_str', '')
+setattr(BertTokenizer, 'special_pat', None)
+setattr(BertTokenizer, 'detokenize_for_offsets', detokenize_for_offsets)
+setattr(BertTokenizer, 'tokenize_with_offsets', tokenize_with_offsets)
 
 class BaseInputReader(ABC):
     def __init__(self, types_path: str, tokenizer: BertTokenizer, logger: Logger = None):
@@ -243,7 +250,7 @@ class StringInputReader(BaseInputReader):
         # spans = self._tokenizer.span
 
         # parse tokens
-        doc_tokens, doc_char_tokens, doc_encoding = self._parse_tokens(jtokens, dataset, offsets)
+        doc_tokens, doc_encoding = self._parse_tokens(jtokens, dataset, offsets)
 
         # print(doc_tokens)
 
@@ -254,13 +261,12 @@ class StringInputReader(BaseInputReader):
         relations = []
 
         # create document
-        document = dataset.create_document(doc_tokens, doc_char_tokens, entities, relations, doc_encoding)
+        document = dataset.create_document(doc_tokens, entities, relations, doc_encoding)
 
         return document
 
     def _parse_tokens(self, jtokens, dataset, offsets):
         doc_tokens = []
-        doc_char_tokens = []
 
         # full document encoding including special tokens ([CLS] and [SEP]) and byte-pair encodings of original tokens
         doc_encoding = [self._tokenizer.convert_tokens_to_ids('[CLS]')]
@@ -269,16 +275,13 @@ class StringInputReader(BaseInputReader):
         for i, token_phrase in enumerate(jtokens):
             token_encoding = self._tokenizer.encode(token_phrase, add_special_tokens=False)
             span_start, span_end = (len(doc_encoding), len(doc_encoding) + len(token_encoding))
-            char_start, char_end = (self.__char_counter + offsets[i][0], self.__char_counter + offsets[i][1])
-
-            token, char_token = dataset.create_token(i, span_start, span_end, token_phrase, char_start, char_end)
+            token = dataset.create_token(i, span_start, span_end, token_phrase)
 
             doc_tokens.append(token)
-            doc_char_tokens.append(char_token)
             doc_encoding += token_encoding
 
         doc_encoding += [self._tokenizer.convert_tokens_to_ids('[SEP]')]
 
         self.__char_counter += offsets[-1][1]
 
-        return doc_tokens, doc_char_tokens, doc_encoding
+        return doc_tokens, doc_encoding
