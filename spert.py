@@ -3,11 +3,11 @@ import argparse
 from args import train_argparser, eval_argparser, infer_argparser, map_args
 from config_reader import process_configs, process_configs_serial
 from model import input_reader
-from model.trainers import SpERTTrainer
+from model.trainers import SpERTTrainer, SpEERTrainer
 from model import util
 
 def __train(run_args, queue=None):
-    trainer = SpERTTrainer(run_args)
+    trainer = get_trainer(run_args.model_type)(run_args)
     trainer.train(train_path=run_args.train_path, valid_path=run_args.valid_path,
                   types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
 
@@ -17,7 +17,7 @@ def _train():
 
 
 def __eval(run_args, queue=None):
-    trainer = SpERTTrainer(run_args)
+    trainer = get_trainer(run_args.model_type)(run_args)
     trainer.eval(dataset_path=run_args.dataset_path, types_path=run_args.types_path,
                  input_reader_cls=input_reader.JsonInputReader)
 
@@ -29,7 +29,7 @@ def load_inference_model(args):
     arg_parser = infer_argparser()
     mapped_args = map_args(arg_parser, args)
     run_args = process_configs_serial(arg_parser, args=mapped_args)
-    model = SpERTTrainer(run_args)
+    model = get_trainer(run_args.model_type)(run_args)
     print("SpERT ready for inference.")
     
     return model
@@ -42,7 +42,7 @@ def _infer(document):
     """
     arg_parser = infer_argparser()
     run_args = process_configs_serial(arg_parser)
-    model = SpERTTrainer(run_args)
+    model = get_trainer(run_args.model_type)(run_args)
     print("SpERT ready for inference.")
     
     infer(model, document, run_args.types_path)
@@ -64,6 +64,16 @@ def _print_inference_results(json_data):
         print(sentence["entities"])
         print(sentence["relations"])
         print()
+
+_TRAINERS = {
+    'spert': SpERTTrainer,
+    'spet': SpERTTrainer,
+    'speer':SpEERTrainer
+}
+
+def get_trainer(name, default=SpERTTrainer):
+    return _TRAINERS.get(name, default)
+
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(add_help=False)
