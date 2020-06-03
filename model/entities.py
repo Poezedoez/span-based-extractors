@@ -183,6 +183,10 @@ class TokenSpan:
     def span(self):
         return self.span_start, self.span_end
 
+    @property
+    def span_phrase(self):
+        return "_".join([t.phrase for t in self._tokens])
+
     def __getitem__(self, s):
         if isinstance(s, slice):
             return TokenSpan(self._tokens[s.start:s.stop:s.step])

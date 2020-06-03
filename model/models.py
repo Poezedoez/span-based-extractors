@@ -8,6 +8,8 @@ from transformers import BertPreTrainedModel
 from model import sampling
 from model import util
 
+from typing import List, Dict
+
 
 def get_token(h: torch.tensor, x: torch.tensor, token: int):
     """ Get specific token embedding (e.g. [CLS]) """
@@ -116,6 +118,9 @@ class SpERT(BertPreTrainedModel):
             chunk_rel_clf = torch.sigmoid(chunk_rel_logits)
             rel_clf[:, i:i + self._max_pairs, :] = chunk_rel_clf
 
+        print("rel clf", rel_clf.shape)
+        print("rel sample masks", rel_sample_masks.shape)
+
         rel_clf = rel_clf * rel_sample_masks  # mask
 
         # apply softmax
@@ -216,6 +221,11 @@ class SpERT(BertPreTrainedModel):
         batch_rel_masks = util.padded_stack(batch_rel_masks).to(device).unsqueeze(-1)
         batch_rel_sample_masks = util.padded_stack(batch_rel_sample_masks).to(device).unsqueeze(-1)
 
+        print("ctx size", ctx_size)
+        print("rel shape", batch_relations.shape)
+        print("rel_masks shape", batch_rel_masks.shape)
+        print("rel sample masks", batch_rel_sample_masks.shape)
+
         return batch_relations, batch_rel_masks, batch_rel_sample_masks
 
     def forward(self, *args, evaluate=False, **kwargs):
@@ -315,7 +325,8 @@ class SpEER(BertPreTrainedModel):
     """ Span-based model to jointly extract entities and relations """
 
     def __init__(self, config: BertConfig, cls_token: int, relation_types: int, entity_types: int,
-                 size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100, encoding_size: int = 200):
+                 size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100, 
+                 encoding_size: int = 200, type_key="type_index"):
         super(SpEER, self).__init__(config)
 
         # BERT model
@@ -332,6 +343,7 @@ class SpEER(BertPreTrainedModel):
         self._relation_types = relation_types
         self._entity_types = entity_types
         self._max_pairs = max_pairs
+        self._type_key = type_key
 
         # weight initialization
         self.init_weights()
@@ -352,6 +364,7 @@ class SpEER(BertPreTrainedModel):
 
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
+        device = self.entity_encoder.weight.device
 
         # encode and classify entities
         size_embeddings = self.size_embeddings(entity_sizes)  # embed entity candidate sizes
@@ -361,9 +374,7 @@ class SpEER(BertPreTrainedModel):
         # prepare relation encoding
         rel_masks = rel_masks.float().unsqueeze(-1)
         h_large = h.unsqueeze(1).repeat(1, max(min(relations.shape[1], self._max_pairs), 1), 1, 1)
-        rel_encoding = torch.zeros([batch_size, relations.shape[1], self.encoding_size]).to(
-            self.rel_encoder.weight.device)
-        print("rel_masks shape", rel_masks.shape)
+        rel_encoding = torch.zeros([batch_size, relations.shape[1], self.encoding_size]).to(device)
 
         # obtain relation encodings
         # chunk processing to reduce memory usage
@@ -377,8 +388,8 @@ class SpEER(BertPreTrainedModel):
 
         return entity_clf, rel_clf
 
-    def _forward_eval(self, encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor,
-                      entity_sizes: torch.tensor, entity_types_onehot: torch.tensor, rel_types_onehot: torch.tensor,
+    def _forward_eval(self, knn_module, entity_type_count: int, rel_type_count: int, encodings: torch.tensor, 
+                      context_mask: torch.tensor, entity_masks: torch.tensor, entity_sizes: torch.tensor, 
                       entity_spans: torch.tensor = None, entity_sample_mask: torch.tensor = None):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
@@ -387,10 +398,30 @@ class SpEER(BertPreTrainedModel):
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
         ctx_size = context_mask.shape[-1]
+        device = self.entity_encoder.weight.device
 
-        # classify entities
+        # encode and classify entities
         size_embeddings = self.size_embeddings(entity_sizes)  # embed entity candidate sizes
-        entity_clf, entity_spans_pool = self._encode_entities(encodings, h, entity_masks, size_embeddings)
+        entity_encoding, entity_spans_pool = self._encode_entities(encodings, h, entity_masks, size_embeddings)
+        entity_encoding_reshaped = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu()
+        entity_types, entity_neighbors = knn_module.infer_(entity_encoding_reshaped, int, self._type_key)
+        entity_types = torch.tensor(entity_types).view(entity_encoding.shape[0], entity_encoding.shape[1], -1).to(device)
+
+        # for neighbors in entity_neighbors:
+        #     for n in neighbors:
+        #         print(n["phrase"], n["type"], n["type_index"])
+        #     print()
+
+        # print("entity types batch unsqueezed", entity_types.unsqueeze(2).shape)
+        
+
+        entity_clf = torch.zeros([entity_encoding.shape[0], entity_encoding.shape[1],
+                                  entity_type_count], dtype=torch.float32).to(device)
+        # print("entity types onehot in forward eval:", entity_clf.shape)
+        entity_clf.scatter_(2, entity_types, 1)
+
+        print("max entity type,fw eval:", entity_clf.max())
+        print("entity clf,fw eval:", entity_clf)
 
         # ignore entity candidates that do not constitute an actual entity for relations (based on classifier)
         relations, rel_masks, rel_sample_masks = self._filter_spans(entity_clf, entity_spans,
@@ -398,8 +429,7 @@ class SpEER(BertPreTrainedModel):
         rel_masks = rel_masks.float()
         rel_sample_masks = rel_sample_masks.float()
         h_large = h.unsqueeze(1).repeat(1, max(min(relations.shape[1], self._max_pairs), 1), 1, 1)
-        rel_clf = torch.zeros([batch_size, relations.shape[1], self.encoding_size]).to(
-            self.rel_classifier.weight.device)
+        rel_encoding = torch.zeros([batch_size, relations.shape[1], self.encoding_size]).to(device)
 
         # obtain relation encodings
         # chunk processing to reduce memory usage
@@ -408,16 +438,51 @@ class SpEER(BertPreTrainedModel):
             rel_encoding_chunk = self._encode_relations(entity_spans_pool, size_embeddings,
                                                         relations, rel_masks, h_large, i)
             rel_encoding[:, i:i + self._max_pairs, :] = rel_encoding_chunk
-            # apply sigmoid
-            rel_encoding_chunks = torch.sigmoid(chunk_rel_logits)
-            rel_encoding[:, i:i + self._max_pairs, :] = rel_encoding_chunk
+        rel_encoding_reshaped = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
+        
+        # encode and classify relations
+        rel_types, rel_neighbors = knn_module.infer_(rel_encoding_reshaped, int, self._type_key)
+        rel_types = torch.LongTensor(rel_types).view(rel_encoding.shape[0], rel_encoding.shape[1], -1).to(device)
+        rel_clf = torch.zeros([rel_encoding.shape[0], rel_encoding.shape[1],
+                                  rel_type_count], dtype=torch.float32).to(device)
+        rel_clf.scatter_(2, rel_types, 1)
+        print("max rel type,fw eval:", rel_clf.max())
 
+        
         rel_clf = rel_clf * rel_sample_masks  # mask
-
-        # apply softmax
-        entity_clf = torch.softmax(entity_clf, dim=2)
+        print("rel clf,fw eval:", rel_clf)
 
         return entity_clf, rel_clf, relations
+
+
+    def _forward_encode(self, encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor,
+                        entity_sizes: torch.tensor, relations: torch.tensor, rel_masks: torch.tensor):
+        # get contextualized token embeddings from last transformer layer
+        context_mask = context_mask.float()
+        h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+
+        entity_masks = entity_masks.float()
+        batch_size = encodings.shape[0]
+        device = self.entity_encoder.weight.device
+
+        # encode and classify entities
+        size_embeddings = self.size_embeddings(entity_sizes)  # embed entity candidate sizes
+        entity_encoding, entity_spans_pool = self._encode_entities(encodings, h, entity_masks, size_embeddings)
+
+        # prepare relation encoding
+        rel_masks = rel_masks.float().unsqueeze(-1)
+        h_large = h.unsqueeze(1).repeat(1, max(min(relations.shape[1], self._max_pairs), 1), 1, 1)
+        rel_encoding = torch.zeros([batch_size, relations.shape[1], self.encoding_size]).to(device)
+
+        # obtain relation encodings
+        # chunk processing to reduce memory usage
+        for i in range(0, relations.shape[1], self._max_pairs):
+            # classify relation candidates
+            rel_encoding_chunk = self._encode_relations(entity_spans_pool, size_embeddings,
+                                                        relations, rel_masks, h_large, i)
+            rel_encoding[:, i:i + self._max_pairs, :] = rel_encoding_chunk
+
+        return entity_encoding, rel_encoding
 
     def _classify_entities(self, entity_encoding, entity_types_onehot):
         # at least two different sequences are required for training (batch size > 1)
@@ -443,10 +508,10 @@ class SpEER(BertPreTrainedModel):
         # print("ENTITY CLF", entity_clf.shape)
 
         cosine_similarities = torch.einsum('ijk, lmn -> ijlm', entity_encoding, entity_encoding)
-        print("cos sim shapes", cosine_similarities.shape)
+        # print("cos sim shapes", cosine_similarities.shape)
         # sum the span similarity scores per type
         entity_clf = torch.einsum('abcd, ijk -> abk', cosine_similarities, entity_types_onehot)
-        print("ENTITY CLF", entity_clf.shape)
+        # print("ENTITY CLF", entity_clf.shape)
 
         return entity_clf
 
@@ -463,7 +528,7 @@ class SpEER(BertPreTrainedModel):
                                  entity_spans_pool, size_embeddings], dim=2)
         entity_repr = self.dropout(entity_repr)
 
-        print("entity repr shape:", entity_repr.shape)
+        # print("entity repr shape:", entity_repr.shape)
 
         # encode entity candidates
         entity_encoding = self.entity_encoder(entity_repr)
@@ -471,7 +536,7 @@ class SpEER(BertPreTrainedModel):
         # normalize encoding to unit length for cosine similarity
         entity_encoding = f.normalize(entity_encoding, dim=2, p=2)
 
-        print("entity encoding shape:", entity_encoding.shape)
+        # print("entity encoding shape:", entity_encoding.shape)
 
         return entity_encoding, entity_spans_pool
 
@@ -479,24 +544,25 @@ class SpEER(BertPreTrainedModel):
         # classify entity candidates in chunks
         # cosine_similarities = torch.einsum('ijk, lmn -> lmij', rel_encoding, rel_encoding)
         cosine_similarities = torch.einsum('ijk, lmn -> ijlm', rel_encoding, rel_encoding)
-        print("cos sim shapes", cosine_similarities.shape)
-        print()
-        chunk_rel_logits = torch.zeros(rel_encoding.shape[0], rel_encoding.shape[1], rel_types_onehot.shape[2],
-                                       device=self.rel_encoder.weight.device)
-        for i in range(cosine_similarities.shape[0]):
-            batch_mask = rel_types_onehot.clone()
-            batch_mask[i, :, :] = 0 # own sequence does not contribute in scores
-            sequence = cosine_similarities[i, :, :].unsqueeze(0)
-            print("rel sequence shape", sequence.shape)
-            print("rel batch mask shape", batch_mask.shape)
-            types_scores = torch.einsum('abcd, ijk -> abk', sequence, batch_mask)
-            print("rel types scores", types_scores.shape)
-            print()
-            chunk_rel_logits[i, :, :] = types_scores
+        # print("cos sim shapes", cosine_similarities.shape)
+        rel_clf = torch.einsum('abcd, ijk -> abk', cosine_similarities, rel_types_onehot)
+        # print()
+        # chunk_rel_logits = torch.zeros(rel_encoding.shape[0], rel_encoding.shape[1], rel_types_onehot.shape[2],
+        #                                device=self.rel_encoder.weight.device)
+        # for i in range(cosine_similarities.shape[0]):
+        #     batch_mask = rel_types_onehot.clone()
+        #     batch_mask[i, :, :] = 0 # own sequence does not contribute in scores
+        #     sequence = cosine_similarities[i, :, :].unsqueeze(0)
+        #     print("rel sequence shape", sequence.shape)
+        #     print("rel batch mask shape", batch_mask.shape)
+        #     types_scores = torch.einsum('abcd, ijk -> abk', sequence, batch_mask)
+        #     print("rel types scores", types_scores.shape)
+        #     print()
+        #     chunk_rel_logits[i, :, :] = types_scores
 
-        print("REL CLF", chunk_rel_logits.shape)
+        # print("REL CLF", chunk_rel_logits.shape)
 
-        return chunk_rel_logits
+        return rel_clf
 
     def _encode_relations(self, entity_spans, size_embeddings, relations, rel_masks, h, chunk_start):
         batch_size = relations.shape[0]
@@ -530,7 +596,7 @@ class SpEER(BertPreTrainedModel):
 
         # normalize encoding to unit length for cosine similarity
         rel_encoding = f.normalize(rel_encoding, dim=2, p=2)
-        print("relation encoding shape:", rel_encoding.shape)
+        # print("relation encoding shape:", rel_encoding.shape)
 
         return rel_encoding
 
@@ -571,18 +637,26 @@ class SpEER(BertPreTrainedModel):
                 batch_rel_sample_masks.append(torch.tensor(sample_masks, dtype=torch.bool))
 
         # stack
-        device = self.rel_classifier.weight.device
+        device = self.rel_encoder.weight.device
         batch_relations = util.padded_stack(batch_relations).to(device)
         batch_rel_masks = util.padded_stack(batch_rel_masks).to(device).unsqueeze(-1)
         batch_rel_sample_masks = util.padded_stack(batch_rel_sample_masks).to(device).unsqueeze(-1)
 
+        # print("ctx size", ctx_size)
+        # print("rel shape", batch_relations.shape)
+        # print("rel_masks shape", batch_rel_masks.shape)
+        # print("rel sample masks", batch_rel_sample_masks.shape)
+
         return batch_relations, batch_rel_masks, batch_rel_sample_masks
 
-    def forward(self, *args, evaluate=False, **kwargs):
-        if not evaluate:
-            return self._forward_train(*args, **kwargs)
-        else:
-            return self._forward_eval(*args, **kwargs)
+    def forward(self, *args, mode="train", **kwargs):
+        f_forward = {
+            "train": self._forward_train,
+            "eval": self._forward_eval,
+            "encode": self._forward_encode
+        }.get(mode)
+        return f_forward(*args, **kwargs)
+
 
 
 _MODELS = {

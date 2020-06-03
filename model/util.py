@@ -155,6 +155,18 @@ def padded_stack(tensors, padding=0):
     stacked = torch.stack(padded_tensors)
     return stacked
 
+def padded_entries(entries, padding={"type": "<PAD>", "phrase": "<PAD>", "type_index": -1}):
+    max_size = max([len(l) for l in entries])
+    padded_entries = []
+
+    for l in entries:
+        s = max_size - len(l)
+        for _ in range(0, s):
+            l.append(padding)
+        padded_entries.append(l)
+
+    return padded_entries
+
 
 def batch_index(tensor, index, pad=False):
     if tensor.shape[0] != index.shape[0]:

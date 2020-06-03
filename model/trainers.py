@@ -6,6 +6,8 @@ import logging
 import time
 import sys
 
+# sys.path.append('../')
+from nearest_neighbert import NearestNeighBERT as NN
 import torch
 from tqdm import tqdm
 from torch.nn import DataParallel
@@ -24,7 +26,7 @@ from model.input_reader import JsonInputReader, BaseInputReader
 from model.loss import SpERTLoss, SpETLoss, Loss
 from model.sampling import Sampler
 
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Type
 
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -647,7 +649,8 @@ class SpEERTrainer(BaseTrainer):
                                             max_pairs=self.args.max_pairs,
                                             prop_drop=self.args.prop_drop,
                                             size_embedding=self.args.size_embedding,
-                                            freeze_transformer=self.args.freeze_transformer)
+                                            freeze_transformer=self.args.freeze_transformer,
+                                            encoding_size=args.encoding_size)
 
         # SpERT is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
         # If you still want to train SpERT on multiple GPUs, uncomment the following lines
@@ -684,8 +687,8 @@ class SpEERTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                print("evaluating in trainers line 245 :)")
-                self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                knn_module = self._index(model, train_dataset, input_reader)
+                self._eval(model, validation_dataset, knn_module, input_reader, epoch + 1, updates_epoch)
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -700,19 +703,23 @@ class SpEERTrainer(BaseTrainer):
 
         self._sampler.join()
 
-    def eval(self, dataset_path: str, types_path: str, input_reader_cls: BaseInputReader):
+    def eval(self, train_path: str, eval_path: str, types_path: str, input_reader_cls: BaseInputReader):
         args = self.args
-        dataset_label = 'test'
+        train_label = 'train'
+        eval_label = 'test'
 
-        self._logger.info("Dataset: %s" % dataset_path)
-        self._logger.info("Model: %s" % args.model_type)
-
-        # create log csv files
-        self._init_eval_logging(dataset_label)
+        # self._init_train_logging(train_label)
+        self._init_eval_logging(eval_label)
 
         # read datasets
         input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
-        input_reader.read({dataset_label: dataset_path})
+
+        input_reader.read({train_label: train_path})
+        train_dataset = input_reader.get_dataset(train_label)
+        self._log_datasets(input_reader)
+
+        input_reader.read({eval_label: eval_path})
+        eval_dataset = input_reader.get_dataset(eval_label)
         self._log_datasets(input_reader)
 
         # create model
@@ -729,17 +736,19 @@ class SpEERTrainer(BaseTrainer):
                                             max_pairs=self.args.max_pairs,
                                             prop_drop=self.args.prop_drop,
                                             size_embedding=self.args.size_embedding,
-                                            freeze_transformer=self.args.freeze_transformer)
+                                            freeze_transformer=self.args.freeze_transformer,
+                                            encoding_size=args.encoding_size)
 
         model.to(self._device)
 
         # evaluate
-        self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
+        knn_module = self._index(model, train_dataset, input_reader)
+        self._eval(model, eval_dataset, knn_module, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
         self._sampler.join()
 
-    def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader):
+    def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader, knn_module: Any):
         args = self.args
         dataset_label = document_data['guid']
 
@@ -796,6 +805,7 @@ class SpEERTrainer(BaseTrainer):
 
             print("entity type count in train epoch:", entity_type_count)
             print("relation type count in train epoch:", rel_type_count)
+            # print("entity types batch", batch.entity_types.shape)
 
             # entity types to one-hot encoding
             entity_types_onehot = torch.zeros([batch.entity_types.shape[0], batch.entity_types.shape[1],
@@ -810,13 +820,14 @@ class SpEERTrainer(BaseTrainer):
             rel_types_onehot.scatter_(2, batch.rel_types.unsqueeze(2), 1)
             rel_types_onehot = rel_types_onehot[:, :, 1:]  # all zeros for 'none' relation
 
-
-            print("entity types onehot in train epoch:", entity_types_onehot.shape)
-            print("relation types onehot in train epoch:", rel_types_onehot.shape)
+            # print("entity types batch unsqueezed", batch.entity_types.unsqueeze(2).shape)
+            # print("rel types batch unsqueezed", batch.rel_types.unsqueeze(2).shape)
+            # print("entity types onehot in train epoch:", entity_types_onehot.shape)
+            # print("relation types onehot in train epoch:", rel_types_onehot.shape)
             # forward step
             entity_logits, rel_logits = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
                                               batch.entity_sizes, batch.rels, batch.rel_masks, 
-                                              entity_types_onehot, rel_types_onehot)
+                                              entity_types_onehot, rel_types_onehot, mode="train")
 
             # compute loss and optimize parameters
             batch_loss = compute_loss.compute(rel_logits, rel_types_onehot, entity_logits,
@@ -889,14 +900,63 @@ class SpEERTrainer(BaseTrainer):
 
         return sequences, entities, relations
 
-    def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
-              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+    def _index(self, model: torch.nn.Module, dataset: Dataset,
+               input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+        self._logger.info("Index: %s" % dataset.label)
+
+        if isinstance(model, DataParallel):
+            # currently no multi GPU support during evaluation
+            model = model.module
+
+        # load knn module (with hardcoded settings)
+        knn_module = NN.NearestNeighBERT(k=2, f_similarity="IP")
+        knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
+
+        train_sampler = self._sampler.create_train_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
+                                                    input_reader.context_size, self.args.neg_entity_count,
+                                                    self.args.neg_relation_count, truncate=False)
+        # encode dataset
+        with torch.no_grad():
+            model.eval()
+            print("Encoding dataset set for evaluation...")
+            # iterate batches
+            total = math.ceil(dataset.document_count / self.args.eval_batch_size)
+            for batch in tqdm(train_sampler, total=total, desc='Encode epoch %s' % epoch):
+                # move batch to selected device
+                batch = batch.to(self._device)
+                # run model (forward pass)
+                entity_encoding, rel_encoding = model(batch.encodings, batch.ctx_masks, batch.entity_masks, 
+                                                        batch.entity_sizes, batch.rels, batch.rel_masks,
+                                                        mode="encode")
+
+                # flatten encodings and entries
+                entity_encoding = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu() 
+                entity_entries_reshaped = []
+                for entry in batch.entity_entries:
+                    # print("entity entry:", entry) 
+                    entity_entries_reshaped += entry
+
+                rel_encoding = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
+                rel_entries_reshaped = []
+                for entry in batch.rel_entries: 
+                    # print("rel entry:", entry) 
+                    rel_entries_reshaped += entry
+
+                # index encodings
+                knn_module.train_(entity_encoding, entity_entries_reshaped)
+                knn_module.train_(rel_encoding, rel_entries_reshaped)
+
+        return knn_module
+            
+
+    def _eval(self, model: torch.nn.Module, dataset: Dataset, knn_module: Any,
+              input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
         self._logger.info("Evaluate: %s" % dataset.label)
 
         if isinstance(model, DataParallel):
             # currently no multi GPU support during evaluation
             model = model.module
-        
+
         # create evaluator
         evaluator = Evaluator(dataset, input_reader, self._tokenizer,
                               self.args.rel_filter_threshold, self.args.example_count,
@@ -904,7 +964,7 @@ class SpEERTrainer(BaseTrainer):
 
         # create batch sampler
         sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
-                                                    input_reader.context_size, truncate=False)
+                                                    input_reader.context_size, truncate=False)         
 
         with torch.no_grad():
             model.eval()
@@ -916,9 +976,9 @@ class SpEERTrainer(BaseTrainer):
                 # move batch to selected device
                 batch = batch.to(self._device)
                 # run model (forward pass)
-                entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                                  batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
-                                                  evaluate=True)
+                entity_clf, rel_clf, rels = model(knn_module, input_reader.entity_type_count, input_reader.relation_type_count,
+                                            batch.encodings, batch.ctx_masks, batch.entity_masks,batch.entity_sizes, 
+                                            batch.entity_spans, batch.entity_sample_masks, mode="eval")
 
                 # evaluate batch
                 # get maximum activation (index of predicted entity type)
@@ -933,7 +993,7 @@ class SpEERTrainer(BaseTrainer):
                        epoch, iteration, global_iteration, dataset.label)
 
         if self.args.store_examples:
-            evaluator.store_examples()
+            evaluator.store_examples() 
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())
