@@ -185,7 +185,7 @@ class TokenSpan:
 
     @property
     def span_phrase(self):
-        return "_".join([t.phrase for t in self._tokens])
+        return " ".join([t.phrase for t in self._tokens])
 
     def __getitem__(self, s):
         if isinstance(s, slice):

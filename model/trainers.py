@@ -6,12 +6,12 @@ import logging
 import time
 import sys
 
-# sys.path.append('../')
 from nearest_neighbert import NearestNeighBERT as NN
 import torch
 from tqdm import tqdm
 from torch.nn import DataParallel
 from torch.optim import Optimizer
+import torch.nn.functional as F
 import transformers
 from transformers import AdamW
 from transformers import BertTokenizer
@@ -23,7 +23,7 @@ from model import models
 from model.entities import Dataset
 from model.evaluator import Evaluator
 from model.input_reader import JsonInputReader, BaseInputReader
-from model.loss import SpERTLoss, SpETLoss, Loss
+from model.loss import SpERTLoss, Loss, SpEERLoss
 from model.sampling import Sampler
 
 from typing import List, Dict, Tuple, Any, Type
@@ -644,7 +644,7 @@ class SpEERTrainer(BaseTrainer):
                                             # SpERT model parameters
                                             cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
                                             # no node for 'none' class
-                                            relation_types=input_reader.relation_type_count - 1,
+                                            relation_types=input_reader.relation_type_count,
                                             entity_types=input_reader.entity_type_count,
                                             max_pairs=self.args.max_pairs,
                                             prop_drop=self.args.prop_drop,
@@ -652,7 +652,7 @@ class SpEERTrainer(BaseTrainer):
                                             freeze_transformer=self.args.freeze_transformer,
                                             encoding_size=args.encoding_size)
 
-        # SpERT is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
+        # SpERT/SpEER is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
         # If you still want to train SpERT on multiple GPUs, uncomment the following lines
         # parallelize model
         if self._device.type != 'cpu':
@@ -663,20 +663,19 @@ class SpEERTrainer(BaseTrainer):
         # create optimizer
         optimizer_params = self._get_optimizer_params(model)
         optimizer = AdamW(optimizer_params, lr=args.lr, weight_decay=args.weight_decay, correct_bias=False)
+
         # create scheduler
         scheduler = transformers.get_linear_schedule_with_warmup(optimizer,
                                                                  num_warmup_steps=args.lr_warmup * updates_total,
                                                                  num_training_steps=updates_total)
         # create loss function
-        rel_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
-        entity_criterion = torch.nn.CrossEntropyLoss(reduction='none')
-        if args.skip_relations:
-            compute_loss = SpETLoss(entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
-        else:
-            compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
+        rel_criterion = torch.nn.BCELoss(reduction='none')
+        entity_criterion = torch.nn.BCELoss(reduction='none')
+        compute_loss = SpEERLoss(entity_criterion, rel_criterion, model, optimizer, scheduler, args.max_grad_norm)
 
         # eval validation set
         if args.init_eval:
+            entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
             self._eval(model, validation_dataset, input_reader, 0, updates_epoch)
 
         # train
@@ -687,8 +686,9 @@ class SpEERTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                knn_module = self._index(model, train_dataset, input_reader)
-                self._eval(model, validation_dataset, knn_module, input_reader, epoch + 1, updates_epoch)
+                entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+                self._eval(model, validation_dataset, entity_knn_module, rel_knn_module, 
+                           input_reader, epoch + 1, updates_epoch)
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -731,7 +731,7 @@ class SpEERTrainer(BaseTrainer):
                                             # additional model parameters
                                             cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
                                             # no node for 'none' class
-                                            relation_types=input_reader.relation_type_count - 1,
+                                            relation_types=input_reader.relation_type_count,
                                             entity_types=input_reader.entity_type_count,
                                             max_pairs=self.args.max_pairs,
                                             prop_drop=self.args.prop_drop,
@@ -742,8 +742,8 @@ class SpEERTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        knn_module = self._index(model, train_dataset, input_reader)
-        self._eval(model, eval_dataset, knn_module, input_reader)
+        entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+        self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
         self._sampler.join()
@@ -771,7 +771,7 @@ class SpEERTrainer(BaseTrainer):
                                             # additional model parameters
                                             cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
                                             # no node for 'none' class
-                                            relation_types=input_reader.relation_type_count - 1,
+                                            relation_types=input_reader.relation_type_count,
                                             entity_types=input_reader.entity_type_count,
                                             max_pairs=self.args.max_pairs,
                                             prop_drop=self.args.prop_drop,
@@ -799,39 +799,46 @@ class SpEERTrainer(BaseTrainer):
 
         iteration = 0
         total = dataset.document_count // self.args.train_batch_size
+        epoch_loss = 0
         for batch in tqdm(sampler, total=total, desc='Train epoch %s' % epoch):
             model.train()
             batch = batch.to(self._device)
 
-            print("entity type count in train epoch:", entity_type_count)
-            print("relation type count in train epoch:", rel_type_count)
-            # print("entity types batch", batch.entity_types.shape)
-
             # entity types to one-hot encoding
             entity_types_onehot = torch.zeros([batch.entity_types.shape[0], batch.entity_types.shape[1],
-                                            entity_type_count], dtype=torch.float32).to(self._device)
+                                            entity_type_count], dtype=torch.long).to(self._device)
             entity_types_onehot.scatter_(2, batch.entity_types.unsqueeze(2), 1)
-            # entity_types_onehot = entity_types_onehot[:, :, 1:]  # all zeros for 'none' entity
-
 
             # relation types to one-hot encoding
             rel_types_onehot = torch.zeros([batch.rel_types.shape[0], batch.rel_types.shape[1],
-                                            rel_type_count], dtype=torch.float32).to(self._device)
+                                            rel_type_count], dtype=torch.long).to(self._device)
             rel_types_onehot.scatter_(2, batch.rel_types.unsqueeze(2), 1)
-            rel_types_onehot = rel_types_onehot[:, :, 1:]  # all zeros for 'none' relation
 
-            # print("entity types batch unsqueezed", batch.entity_types.unsqueeze(2).shape)
-            # print("rel types batch unsqueezed", batch.rel_types.unsqueeze(2).shape)
-            # print("entity types onehot in train epoch:", entity_types_onehot.shape)
-            # print("relation types onehot in train epoch:", rel_types_onehot.shape)
             # forward step
             entity_logits, rel_logits = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
                                               batch.entity_sizes, batch.rels, batch.rel_masks, 
-                                              entity_types_onehot, rel_types_onehot, mode="train")
+                                              mode="train")
+
+            # create BCE entity types (TODO: find vectorized way? scatter?)
+            s_batch, s_spans, _ = entity_types_onehot.shape
+            entity_types_bce = torch.zeros(s_batch, s_spans, s_batch, s_spans, device=self._device)
+            for i in range(0, s_batch):
+                for j in range(0, s_spans):
+                    type_ = batch.entity_types[i, j]
+                    entity_types_bce[i, j] = entity_types_onehot[:, :, type_]
+
+            # create BCE rel types (TODO: find vectorized way? scatter?)
+            s_batch, s_spans, _ = rel_types_onehot.shape
+            rel_types_bce = torch.zeros(s_batch, s_spans, s_batch, s_spans, device=self._device)
+            for i in range(0, s_batch):
+                for j in range(0, s_spans):
+                    type_ = batch.rel_types[i, j]
+                    rel_types_bce[i, j, :, :] = rel_types_onehot[:, :, type_]
 
             # compute loss and optimize parameters
-            batch_loss = compute_loss.compute(rel_logits, rel_types_onehot, entity_logits,
-                                              batch.entity_types, batch.rel_sample_masks, batch.entity_sample_masks)
+            batch_loss = compute_loss.compute(entity_logits, entity_types_bce, batch.entity_sample_masks, 
+                                              rel_logits, rel_types_bce, batch.rel_sample_masks)
+            epoch_loss += batch_loss
 
             # logging
             iteration += 1
@@ -840,8 +847,11 @@ class SpEERTrainer(BaseTrainer):
             if global_iteration % self.args.train_log_iter == 0:
                 self._log_train(optimizer, batch_loss, epoch, iteration, global_iteration, dataset.label)
 
+        print("Loss epoch {}: {}".format(epoch, epoch_loss/self.args.train_batch_size))
+
         return iteration
 
+    # TODO: fix this
     def _infer(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
                epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
 
@@ -881,6 +891,7 @@ class SpEERTrainer(BaseTrainer):
                 # evaluate batch
                 # get maximum activation (index of predicted entity type)
                 batch_entity_types = entity_clf.argmax(dim=-1)
+
                 # apply entity sample mask
                 batch_entity_types *= batch.entity_sample_masks.long()
                 e_t = time.time()
@@ -908,49 +919,47 @@ class SpEERTrainer(BaseTrainer):
             # currently no multi GPU support during evaluation
             model = model.module
 
-        # load knn module (with hardcoded settings)
-        knn_module = NN.NearestNeighBERT(k=2, f_similarity="IP")
-        knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
+        # load knn modules (with hardcoded settings)
+        entity_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="entity_knn_module")
+        rel_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="rel_knn_module")
+        entity_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
+        rel_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
 
         train_sampler = self._sampler.create_train_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
                                                     input_reader.context_size, self.args.neg_entity_count,
                                                     self.args.neg_relation_count, truncate=False)
         # encode dataset
         with torch.no_grad():
-            model.eval()
-            print("Encoding dataset set for evaluation...")
+            print("Encoding train examples for evaluation...")
             # iterate batches
             total = math.ceil(dataset.document_count / self.args.eval_batch_size)
-            for batch in tqdm(train_sampler, total=total, desc='Encode epoch %s' % epoch):
-                # move batch to selected device
+            for batch in tqdm(train_sampler, total=total):
                 batch = batch.to(self._device)
-                # run model (forward pass)
+                # forward encode
                 entity_encoding, rel_encoding = model(batch.encodings, batch.ctx_masks, batch.entity_masks, 
                                                         batch.entity_sizes, batch.rels, batch.rel_masks,
                                                         mode="encode")
-
                 # flatten encodings and entries
                 entity_encoding = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu() 
                 entity_entries_reshaped = []
                 for entry in batch.entity_entries:
-                    # print("entity entry:", entry) 
                     entity_entries_reshaped += entry
-
+                
                 rel_encoding = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
                 rel_entries_reshaped = []
-                for entry in batch.rel_entries: 
-                    # print("rel entry:", entry) 
+                for entry in batch.rel_entries:
                     rel_entries_reshaped += entry
-
+                
                 # index encodings
-                knn_module.train_(entity_encoding, entity_entries_reshaped)
-                knn_module.train_(rel_encoding, rel_entries_reshaped)
+                entity_knn_module.train_(entity_encoding, entity_entries_reshaped)
+                rel_knn_module.train_(rel_encoding, rel_entries_reshaped)
 
-        return knn_module
+        return entity_knn_module, rel_knn_module
             
 
-    def _eval(self, model: torch.nn.Module, dataset: Dataset, knn_module: Any,
-              input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+    def _eval(self, model: torch.nn.Module, dataset: Dataset, entity_knn_module: Any,
+              rel_knn_module: Any, input_reader: JsonInputReader, 
+              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
         self._logger.info("Evaluate: %s" % dataset.label)
 
         if isinstance(model, DataParallel):
@@ -976,15 +985,17 @@ class SpEERTrainer(BaseTrainer):
                 # move batch to selected device
                 batch = batch.to(self._device)
                 # run model (forward pass)
-                entity_clf, rel_clf, rels = model(knn_module, input_reader.entity_type_count, input_reader.relation_type_count,
+                entity_clf, rel_clf, rels = model(entity_knn_module, rel_knn_module, batch.entity_entries,
                                             batch.encodings, batch.ctx_masks, batch.entity_masks,batch.entity_sizes, 
                                             batch.entity_spans, batch.entity_sample_masks, mode="eval")
 
-                # evaluate batch
+                # evaluate batch (TODO: what is this?) This block necessary?
                 # get maximum activation (index of predicted entity type)
                 batch_entity_types = entity_clf.argmax(dim=-1)
-                # apply entity sample mask
+                # apply entity sample mask 
                 batch_entity_types *= batch.entity_sample_masks.long()
+                ############
+
                 evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
 
         global_iteration = epoch * updates_epoch + iteration

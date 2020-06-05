@@ -68,6 +68,7 @@ class Evaluator:
             rel_nonzero = rel_clf.nonzero().view(-1)
             rel_scores = rel_clf[rel_nonzero]
 
+            # rel_types = (rel_nonzero % rel_class_count)
             rel_types = (rel_nonzero % rel_class_count) + 1  # model does not predict None class (+1)
             rel_indices = rel_nonzero // rel_class_count
 

@@ -18,8 +18,8 @@ def _train():
 
 def __eval(run_args, queue=None):
     trainer = get_trainer(run_args.model_type)(run_args)
-    trainer.eval(dataset_path=run_args.dataset_path, types_path=run_args.types_path,
-                 input_reader_cls=input_reader.JsonInputReader)
+    trainer.eval(train_path=run_args.train_path, eval_path=run_args.eval_path, 
+                 types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
 
 def _eval():
     arg_parser = eval_argparser()
@@ -66,8 +66,8 @@ def _print_inference_results(json_data):
         print()
 
 _TRAINERS = {
-    'spert': SpERTTrainer,
-    'spet': SpERTTrainer,
+    # 'spert': SpERTTrainer,
+    # 'spet': SpERTTrainer,
     'speer':SpEERTrainer
 }
 

@@ -59,7 +59,7 @@ class TrainTensorBatch:
 class EvalTensorBatch:
     def __init__(self, encodings: torch.tensor, ctx_masks: torch.tensor,
                  entity_masks: torch.tensor, entity_sizes: torch.tensor, entity_spans: torch.tensor,
-                 entity_sample_masks: torch.tensor):
+                 entity_sample_masks: torch.tensor, entity_entries: List[List[Dict]]):
         self.encodings = encodings
         self.ctx_masks = ctx_masks
 
@@ -67,6 +67,7 @@ class EvalTensorBatch:
         self.entity_sizes = entity_sizes
         self.entity_spans = entity_spans
         self.entity_sample_masks = entity_sample_masks
+        self.entity_entries = entity_entries
 
     def to(self, device):
         encodings = self.encodings.to(device)
@@ -76,8 +77,10 @@ class EvalTensorBatch:
         entity_sizes = self.entity_sizes.to(device)
         entity_spans = self.entity_spans.to(device)
         entity_sample_masks = self.entity_sample_masks.to(device)
+        entity_entries = self.entity_entries
 
-        return EvalTensorBatch(encodings, ctx_masks, entity_masks, entity_sizes, entity_spans, entity_sample_masks)
+        return EvalTensorBatch(encodings, ctx_masks, entity_masks, entity_sizes, entity_spans, 
+                               entity_sample_masks, entity_entries)
 
 
 class TrainTensorSample:
@@ -281,7 +284,8 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
         pos_entity_sizes.append(len(e.tokens))
         pos_entity_entries.append({"type": e.entity_type.verbose_name, 
                                    "phrase": e.phrase, 
-                                   type_key: e.entity_type.index})
+                                   type_key: e.entity_type.index,
+                                   "indicator": "[ENT]"})
         
     # positive relations
     pos_rels, pos_rel_spans, pos_rel_types, pos_rel_masks, pos_rel_entries = [], [], [], [], []
@@ -291,10 +295,11 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
         pos_rel_spans.append((s1, s2))
         pos_rel_types.append(rel.relation_type) # convert to type index later
         pos_rel_masks.append(create_rel_mask(s1, s2, context_size))
-        phrase = "|{}| {} |{}|".format(rel.head_entity.phrase, rel.relation_type, rel.tail_entity.phrase)
+        phrase = "|{}| {} |{}|".format(rel.head_entity.phrase, rel.relation_type.verbose_name, rel.tail_entity.phrase)
         pos_rel_entries.append({"type": rel.relation_type.verbose_name, 
                                 "phrase": phrase, 
-                                type_key: rel.relation_type.index})
+                                type_key: rel.relation_type.index,
+                                "indicator": "[REL]"})
 
     # negative entities
     neg_entity_spans, neg_entity_sizes, neg_entity_masks, neg_entity_types, neg_entity_entries = [], [], [], [], []
@@ -309,7 +314,8 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
                 neg_entity_types.append(0) # 0 = none type
                 neg_entity_entries.append({"type": "O", 
                                            "phrase": phrase, 
-                                           type_key: 0})
+                                           type_key: 0,
+                                           "indicator": "[ENT]"})
 
     # sample negative entities
     neg_entity_samples = random.sample(list(zip(neg_entity_spans, neg_entity_sizes, neg_entity_masks, 
@@ -341,7 +347,8 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
                 phrase = "|{}| {} |{}|".format(pos_entity_entries[i]["phrase"], "O", pos_entity_entries[j]["phrase"])
                 neg_rel_entries.append({"type": "O", 
                                         "phrase": phrase, 
-                                        type_key: 0})
+                                        type_key: 0,
+                                        "indicator": "[REL]"})
 
 
     # sample negative relations
@@ -365,8 +372,8 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
     rel_masks = pos_rel_masks + list(neg_rel_masks)
     rel_entries = pos_rel_entries + list(neg_rel_entries)
 
-    assert len(entity_masks) == len(entity_sizes) == len(entity_types)
-    assert len(rels) == len(rel_masks) == len(rel_types)
+    assert len(entity_masks) == len(entity_sizes) == len(entity_types) == len(entity_entries)
+    assert len(rels) == len(rel_masks) == len(rel_types) == len(rel_entries)
 
     # create tensors
     # token indices
@@ -584,7 +591,8 @@ def _create_eval_batch(samples):
 
     batch = EvalTensorBatch(encodings=encodings, ctx_masks=ctx_masks, entity_masks=batch_entity_masks,
                             entity_sizes=batch_entity_sizes, entity_spans=batch_entity_spans,
-                            entity_sample_masks=batch_entity_sample_masks)
+                            entity_sample_masks=batch_entity_sample_masks,
+                            entity_entries=batch_entity_entries)
 
     return batch
 
