@@ -30,6 +30,8 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--model_type', type=str, default="spert", help="Type of model")
     arg_parser.add_argument('--cpu', action='store_true', default=False,
                             help="If true, train/evaluate on CPU even if a CUDA device is available")
+    arg_parser.add_argument('--encoding_size', type=int, default=200, help="Dimensionality of encoding") 
+    arg_parser.add_argument('--feature_enhancer', type=str, default="pass", help="Name of feature enhancer")  
     arg_parser.add_argument('--eval_batch_size', type=int, default=1, help="Evaluation batch size")
     arg_parser.add_argument('--max_pairs', type=int, default=1000,
                             help="Maximum entity pairs to process during training/evaluation")
@@ -87,7 +89,12 @@ def eval_argparser():
     arg_parser = argparse.ArgumentParser()
 
     # Input
-    arg_parser.add_argument('--dataset_path', type=str, help="Path to dataset to evaluate")
+    arg_parser.add_argument('--neg_entity_count', type=int, default=100,
+                            help="Number of negative entity samples per document (sentence)")
+    arg_parser.add_argument('--neg_relation_count', type=int, default=100,
+                            help="Number of negative relation samples per document (sentence)")
+    arg_parser.add_argument('--train_path', type=str, help="Path to train dataset to encode for evaluation")
+    arg_parser.add_argument('--eval_path', type=str, help="Path to dataset to evaluate")
 
     _add_common_args(arg_parser)
 

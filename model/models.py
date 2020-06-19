@@ -7,6 +7,7 @@ from transformers import BertPreTrainedModel
 
 from model import sampling
 from model import util
+from model import feature_enhancers as fe
 
 from typing import List, Dict
 
@@ -28,13 +29,15 @@ class SpERT(BertPreTrainedModel):
     """ Span-based model to jointly extract entities and relations """
 
     def __init__(self, config: BertConfig, cls_token: int, relation_types: int, entity_types: int,
-                 size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100):
+                 size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100,
+                 feature_enhancer: str = "pass"):
         super(SpERT, self).__init__(config)
 
         # BERT model
         self.bert = BertModel(config)
 
         # layers
+        self.feature_enhancer = fe.get_feature_enhancer(feature_enhancer)(config.hidden_size, config.hidden_size)
         self.rel_classifier = nn.Linear(config.hidden_size * 3 + size_embedding * 2, relation_types)
         self.entity_classifier = nn.Linear(config.hidden_size * 2 + size_embedding, entity_types)
         self.size_embeddings = nn.Embedding(100, size_embedding)
@@ -60,6 +63,12 @@ class SpERT(BertPreTrainedModel):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+
+        # enhance hidden features
+        orig_shape = h.shape
+        h = self.feature_enhancer.prepare_input(h, context_mask)
+        h = self.feature_enhancer(h)
+        h = self.feature_enhancer.prepare_output(h, orig_shape)
 
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
@@ -237,7 +246,7 @@ class SpEER(BertPreTrainedModel):
 
     def __init__(self, config: BertConfig, cls_token: int, relation_types: int, entity_types: int,
                  size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100, 
-                 encoding_size: int = 200, type_key="type_index"):
+                 encoding_size: int = 200, type_key="type_index", feature_enhancer: str = "pass"):
         super(SpEER, self).__init__(config)
 
         # BERT model
@@ -245,6 +254,7 @@ class SpEER(BertPreTrainedModel):
 
         # layers
         self.encoding_size = encoding_size
+        self.feature_enhancer = fe.get_feature_enhancer(feature_enhancer)(config.hidden_size, config.hidden_size)
         self.rel_encoder = nn.Linear(config.hidden_size * 3 + size_embedding * 2, encoding_size)
         self.entity_encoder = nn.Linear(config.hidden_size * 2 + size_embedding, encoding_size)
         self.size_embeddings = nn.Embedding(100, size_embedding)
@@ -272,6 +282,12 @@ class SpEER(BertPreTrainedModel):
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
 
+        # enhance hidden features
+        orig_shape = h.shape
+        h = self.feature_enhancer.prepare_input(h, context_mask)
+        h = self.feature_enhancer(h)
+        h = self.feature_enhancer.prepare_output(h, orig_shape)
+        
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
         device = self.entity_encoder.weight.device
@@ -431,7 +447,7 @@ class SpEER(BertPreTrainedModel):
 
         return normalized_similarities
 
-    def _encode_entities(self, encodings, h, entity_masks, size_embeddings, ):
+    def _encode_entities(self, encodings, h, entity_masks, size_embeddings):
         # max pool entity candidate spans
         entity_spans_pool = entity_masks.unsqueeze(-1) * h.unsqueeze(1)
         entity_spans_pool = entity_spans_pool.max(dim=2)[0]
