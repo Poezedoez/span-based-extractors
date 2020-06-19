@@ -224,11 +224,6 @@ class SpERT(BertPreTrainedModel):
         batch_rel_masks = util.padded_stack(batch_rel_masks).to(device).unsqueeze(-1)
         batch_rel_sample_masks = util.padded_stack(batch_rel_sample_masks).to(device).unsqueeze(-1)
 
-        print("ctx size", ctx_size)
-        print("rel shape", batch_relations.shape)
-        print("rel_masks shape", batch_rel_masks.shape)
-        print("rel sample masks", batch_rel_sample_masks.shape)
-
         return batch_relations, batch_rel_masks, batch_rel_sample_masks
 
     def forward(self, *args, evaluate=False, **kwargs):
@@ -545,7 +540,6 @@ class SpEER(BertPreTrainedModel):
                     if i1 != i2:
                         rels.append((i1, i2))
                         phrase = "|{}| <TBD> |{}|".format(non_zero_entries[n]["phrase"], non_zero_entries[m]["phrase"])
-                        # print("rel entry phrase, filter spans", phrase)
                         rel_entries.append({"phrase": phrase, "type": "<TBD>", self._type_key: "<TBD>"})
                         rel_masks.append(sampling.create_rel_mask(s1, s2, ctx_size))
                         sample_masks.append(1)

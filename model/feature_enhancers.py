@@ -25,7 +25,10 @@ class Pass(FeatureEnhancer):
 
     def prepare_input(self, x, *args):
         return x
-        
+
+    def prepare_output(self, h, *args):
+        return h
+
     def forward(self, x):
         return x
 
