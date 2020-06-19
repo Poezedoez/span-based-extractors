@@ -121,7 +121,6 @@ class BiLSTM(FeatureEnhancer):
     def prepare_input(self, x, mask):
         sequence_dimension = 1 if self.batch_first else 0
         lengths = mask.sum(dim=sequence_dimension).int().tolist()
-        print(lengths)
         packed_x = torch.nn.utils.rnn.pack_padded_sequence(x, lengths, batch_first=self.batch_first, 
                                                            enforce_sorted=False)
         return packed_x

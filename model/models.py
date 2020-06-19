@@ -146,12 +146,9 @@ class SpERT(BertPreTrainedModel):
         entity_repr = torch.cat([entity_ctx.unsqueeze(1).repeat(1, entity_spans_pool.shape[1], 1),
                                  entity_spans_pool, size_embeddings], dim=2)
         entity_repr = self.dropout(entity_repr)
-        print("entity repr shape:", entity_repr.shape)
-
 
         # classify entity candidates
         entity_clf = self.entity_classifier(entity_repr)
-        print("entity clf shape:", entity_clf.shape)
 
         return entity_clf, entity_spans_pool
 

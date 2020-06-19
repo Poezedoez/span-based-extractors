@@ -23,7 +23,7 @@ from model import models
 from model.entities import Dataset
 from model.evaluator import Evaluator
 from model.input_reader import JsonInputReader, BaseInputReader
-from model.loss import SpERTLoss, Loss, SpEERLoss
+from model.loss import Loss, SpETLoss, SpERTLoss, SpEERLoss
 from model.sampling import Sampler
 
 from typing import List, Dict, Tuple, Any, Type
@@ -197,8 +197,6 @@ class SpERTTrainer(BaseTrainer):
         model_class = models.get_model(self.args.model_type)
 
         # load model
-        temp = args.model_path if args.model_path else "NONOnonnno"
-        print(temp)
         model = model_class.from_pretrained(self.args.model_path,
                                             cache_dir=self.args.cache_path,
                                             # SpERT model parameters
