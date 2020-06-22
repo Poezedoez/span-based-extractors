@@ -62,13 +62,20 @@ class SpERT(BertPreTrainedModel):
                        entity_sizes: torch.tensor, relations: torch.tensor, rel_masks: torch.tensor):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
-        h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+        h_bert = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+
+        # print("h_bert", h_bert.shape, h_bert[1, :, 1])
+        # print("mask bert", context_mask.shape, context_mask[1, :])
+        # lengths = context_mask.sum(dim=1).int().tolist()
+        # print("lengths", lengths)
 
         # enhance hidden features
-        orig_shape = h.shape
-        h = self.feature_enhancer.prepare_input(h, context_mask)
+        orig_shape = h_bert.shape
+        h = self.feature_enhancer.prepare_input(h_bert, context_mask)
         h = self.feature_enhancer(h)
         h = self.feature_enhancer.prepare_output(h, orig_shape)
+        # print("h_fe_prepped", h[1, :, 1])
+
 
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
@@ -99,6 +106,12 @@ class SpERT(BertPreTrainedModel):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+
+        # enhance hidden features
+        orig_shape = h.shape
+        h = self.feature_enhancer.prepare_input(h, context_mask)
+        h = self.feature_enhancer(h)
+        h = self.feature_enhancer.prepare_output(h, orig_shape)
 
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]
@@ -313,6 +326,12 @@ class SpEER(BertPreTrainedModel):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
+
+        # enhance hidden features
+        orig_shape = h.shape
+        h = self.feature_enhancer.prepare_input(h, context_mask)
+        h = self.feature_enhancer(h)
+        h = self.feature_enhancer.prepare_output(h, orig_shape)
 
         entity_masks = entity_masks.float()
         batch_size = encodings.shape[0]

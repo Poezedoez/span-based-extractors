@@ -245,7 +245,6 @@ class SpERTTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                print("evaluating in trainers line 245 :)")
                 self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
 
         # save final model
