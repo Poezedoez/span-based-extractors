@@ -16,6 +16,14 @@ class FeatureEnhancer(nn.Module, ABC):
     @abstractmethod
     def forward(self, x):
         pass
+    
+    @abstractmethod
+    def prepare_input(self):
+        pass
+    
+    @abstractmethod
+    def prepare_output(self):
+        pass
 
 
 class Pass(FeatureEnhancer):
@@ -50,10 +58,10 @@ class MAP(FeatureEnhancer):
         self.model = nn.Sequential(OrderedDict(modules)).to(device) 
 
     def prepare_input(self, x, *args):
-        return x.reshape(-1, x.shape[-1])
-        
-    def prepare_output(self, h, orig_shape):
-        return h.reshape(orig_shape) 
+        return x
+
+    def prepare_output(self, h, *args):
+        return h
 
     def forward(self, x):
         return self.model(x)
@@ -81,10 +89,10 @@ class MLP(FeatureEnhancer):
         self.model = nn.Sequential(OrderedDict(modules)).to(device) 
 
     def prepare_input(self, x, *args):
-        return x.reshape(-1, x.shape[-1])
+        return x
 
-    def prepare_output(self, h, orig_shape):
-        return h.reshape(orig_shape) 
+    def prepare_output(self, h, *args):
+        return h
 
     def forward(self, x):
         return self.model(x)

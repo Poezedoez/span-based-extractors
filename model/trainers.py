@@ -260,11 +260,11 @@ class SpERTTrainer(BaseTrainer):
 
         self._sampler.join()
 
-    def eval(self, dataset_path: str, types_path: str, input_reader_cls: BaseInputReader):
+    def eval(self, eval_path: str, train_path: str, types_path: str, input_reader_cls: BaseInputReader):
         args = self.args
         dataset_label = 'test'
 
-        self._logger.info("Dataset: %s" % dataset_path)
+        self._logger.info("Dataset: %s" % eval_path)
         self._logger.info("Model: %s" % args.model_type)
 
         # create log csv files
@@ -272,7 +272,7 @@ class SpERTTrainer(BaseTrainer):
 
         # read datasets
         input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
-        input_reader.read({dataset_label: dataset_path})
+        input_reader.read({dataset_label: eval_path})
         self._log_datasets(input_reader)
 
         # create model
