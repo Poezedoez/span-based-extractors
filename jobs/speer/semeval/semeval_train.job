@@ -21,8 +21,8 @@ cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
 python main.py train --config configs/speer/map/semeval2017_task10_train.conf
-python main.py train --config configs/speer/mlp/semeval2017_task10_train.conf
-python main.py train --config configs/speer/bilstm/semeval2017_task10_train.conf
-python main.py train --config configs/speer/transformer/semeval2017_task10_train.conf
+# python main.py train --config configs/speer/mlp/semeval2017_task10_train.conf
+# python main.py train --config configs/speer/bilstm/semeval2017_task10_train.conf
+# python main.py train --config configs/speer/transformer/semeval2017_task10_train.conf
 
 cp -r * $HOME/speer/
