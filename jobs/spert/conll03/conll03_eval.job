@@ -22,8 +22,8 @@ cd $TMPDIR/speer
 
 for i in 1, 2, 3 
 do
-    python main.py eval --config configs/spert/map/conll03_eval.conf --model_path data/spert/models/conll03/map/run$i/
-    python main.py eval --config configs/spert/mlp/conll03_eval.conf --model_path data/spert/models/conll03/mlp/run$i/
+    # python main.py eval --config configs/spert/map/conll03_eval.conf --model_path data/spert/models/conll03/map/run$i/
+    # python main.py eval --config configs/spert/mlp/conll03_eval.conf --model_path data/spert/models/conll03/mlp/run$i/
     python main.py eval --config configs/spert/bilstm/conll03_eval.conf --model_path data/spert/models/conll03/bilstm/run$i/
     python main.py eval --config configs/spert/transformer/conll03_eval.conf --model_path data/spert/models/conll03/transformer/run$i/
 done
