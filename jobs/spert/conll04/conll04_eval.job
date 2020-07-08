@@ -28,7 +28,7 @@ do
     do
         python main.py eval --config "configs/all/conll04_eval.conf" \
                             --model_type $FRAMEWORK \
-                            --feature_enhancer $model \ 
+                            --feature_enhancer $model \
                             --model_path "data/$FRAMEWORK/save/conll04_train_$model/run$run/" \
                             --log_path "data/$FRAMEWORK/log/conll04_eval_$model/run$run/"
     done

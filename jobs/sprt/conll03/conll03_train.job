@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=conll03_train_spert
+#SBATCH --job-name=conll03_train_sprt
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
@@ -20,7 +20,7 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-FRAMEWORK="spert"
+FRAMEWORK="sprt"
 
 for run in 1 2 3
 do

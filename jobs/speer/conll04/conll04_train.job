@@ -28,7 +28,7 @@ do
     do
         python main.py train --config "configs/all/conll04_train.conf" \
                             --model_type $FRAMEWORK \
-                            --feature_enhancer $model \ 
+                            --feature_enhancer $model \
                             --save_path "data/$FRAMEWORK/save/conll04_train_$model/run$run/" \
                             --log_path "data/$FRAMEWORK/log/conll04_train_$model/run$run/"
     done

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=conll03_eval_speer
+#SBATCH --job-name=semeval_eval_sprt
 #SBATCH --time=6:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
@@ -20,17 +20,19 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-FRAMEWORK="speer"
+FRAMEWORK="sprt"
 
 for run in 1 2 3
 do
-    for model in map mlp bilstm transformer
+    # for model in map mlp bilstm transformer
+    for model in map
     do
-        python main.py eval --config "configs/all/conll03_eval.conf" \
+        python main.py eval --config "configs/all/semeval2017_task10_eval.conf" \
                             --model_type $FRAMEWORK \
                             --feature_enhancer $model \
-                            --model_path "data/$FRAMEWORK/save/conll03_train_$model/run$run/" \
-                            --log_path "data/$FRAMEWORK/log/conll03_eval_$model/run$run/"
+                            --model_path "data/$FRAMEWORK/save/semeval2017_task10_train_$model/run$run/" \
+                            --predicted_entities_path "data/$FRAMEWORK/save/semeval2017_task10_eval_$model/run$run/predicted_entities.json" \
+                            --log_path "data/$FRAMEWORK/log/semeval2017_task10_eval_$model/run$run/"
     done
 done
 cp -r * $HOME/speer/
