@@ -20,11 +20,18 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-for i in 1, 2, 3 
+FRAMEWORK="spert"
+
+for run in 1 2 3
 do
-    python main.py eval --config configs/spert/map/semeval2017_task10_eval.conf --model_path data/spert/models/semeval/map/run$i/
-    # python main.py eval --config configs/spert/mlp/semeval2017_task10_eval.conf --model_path data/spert/models/semeval/mlp/run$i/
-    # python main.py eval --config configs/spert/bilstm/semeval2017_task10_eval.conf --model_path data/spert/models/semeval/bilstm/run$i/
-    # python main.py eval --config configs/spert/transformer/semeval2017_task10_eval.conf --model_path data/spert/models/semeval/transformer/run$i/
+    # for model in map mlp bilstm transformer
+    for model in map
+    do
+        python main.py eval --config "configs/all/semeval2017_task10_eval.conf" \
+                            --model_type $FRAMEWORK \
+                            --feature_enhancer $model \ 
+                            --model_path "data/$FRAMEWORK/save/semeval2017_task10_train_$model/run$run/" \
+                            --log_path "data/$FRAMEWORK/log/semeval2017_task10_eval_$model/run$run/"
+    done
 done
 cp -r * $HOME/speer/

@@ -20,11 +20,17 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-for i in 1, 2, 3 
+FRAMEWORK="speer"
+
+for run in 1 2 3
 do
-    python main.py eval --config configs/speer/map/conll03_eval.conf --model_path data/speer/models/conll03/map/run$i/
-    python main.py eval --config configs/speer/mlp/conll03_eval.conf --model_path data/speer/models/conll03/mlp/run$i/
-    python main.py eval --config configs/speer/bilstm/conll03_eval.conf --model_path data/speer/models/conll03/bilstm/run$i/
-    python main.py eval --config configs/speer/transformer/conll03_eval.conf --model_path data/speer/models/conll03/transformer/run$i/
+    for model in map mlp bilstm transformer
+    do
+        python main.py eval --config "configs/all/conll03_eval.conf" \
+                            --model_type $FRAMEWORK \
+                            --feature_enhancer $model \ 
+                            --model_path "data/$FRAMEWORK/save/conll03_train_$model/run$run/" \
+                            --log_path "data/$FRAMEWORK/log/conll03_eval_$model/run$run/"
+    done
 done
 cp -r * $HOME/speer/
