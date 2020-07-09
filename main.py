@@ -3,22 +3,30 @@ import argparse
 from args import train_argparser, eval_argparser, infer_argparser, map_args
 from config_reader import process_configs, process_configs_serial
 from model import input_reader
-from model.trainers import SpERTTrainer, SpEERTrainer
+from model.trainers import SpERTTrainer, SpEERTrainer, SpRTTrainer
 from model import util
 
-def __train(run_args, queue=None):
+def __train(run_args, skip_saving=False, queue=None):
+    print(run_args)
     trainer = get_trainer(run_args.model_type)(run_args)
-    trainer.train(train_path=run_args.train_path, valid_path=run_args.valid_path,
-                  types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
+    model = trainer.train(train_path=run_args.train_path, valid_path=run_args.valid_path,
+                          types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader,
+                          skip_saving=skip_saving)
+    return model
 
-def _train():
+def _train(skip_saving=False):
     arg_parser = train_argparser()
-    process_configs(target=__train, arg_parser=arg_parser)
-
+    if not skip_saving:
+        process_configs(target=__train, arg_parser=arg_parser)
+    else:
+        run_args = process_configs_serial(arg_parser)
+        trained_model = __train(run_args, skip_saving)
+        return trained_model
 
 def __eval(run_args, queue=None):
     trainer = get_trainer(run_args.model_type)(run_args)
     trainer.eval(train_path=run_args.train_path, eval_path=run_args.eval_path, 
+                 predicted_entities_path=run_args.prediced_entities_path, 
                  types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
 
 def _eval():
@@ -67,7 +75,8 @@ def _print_inference_results(json_data):
 
 _TRAINERS = {
     'spert': SpERTTrainer,
-    'speer':SpEERTrainer
+    'speer':SpEERTrainer,
+    'sprt': SpRTTrainer
 }
 
 def get_trainer(name, default=SpERTTrainer):
@@ -77,6 +86,8 @@ def get_trainer(name, default=SpERTTrainer):
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(add_help=False)
     arg_parser.add_argument('mode', type=str, help="Mode: 'train' or 'eval'")
+    # arg_parser.add_argument('--skip_saving', action='store_true', default=False, 
+    #                         help="Dont save trained model to disk")
     args, _ = arg_parser.parse_known_args()
     example_data = {
         'guid': 'IDtest',

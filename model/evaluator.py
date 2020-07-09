@@ -29,6 +29,8 @@ class Evaluator:
         self._example_count = example_count
         self._examples_path = example_path
 
+        self._sequences = []
+
         # relations
         self._gt_relations = []  # ground truth
         self._pred_relations = []  # prediction
@@ -195,13 +197,16 @@ class Evaluator:
 
     def _convert_gt(self, docs: List[Document]):
         for doc in docs:
+            tokens = doc.tokens
             gt_relations = doc.relations
             gt_entities = doc.entities
+
 
             # convert ground truth relations and entities for precision/recall/f1 evaluation
             sample_gt_relations = [rel.as_tuple() for rel in gt_relations]
             sample_gt_entities = [entity.as_tuple() for entity in gt_entities]
-
+            
+            self._sequences.append(tokens)
             self._gt_relations.append(sample_gt_relations)
             self._gt_entities.append(sample_gt_entities)
 

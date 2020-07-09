@@ -23,7 +23,7 @@ from model import models
 from model.entities import Dataset
 from model.evaluator import Evaluator
 from model.input_reader import JsonInputReader, BaseInputReader
-from model.loss import Loss, SpETLoss, SpERTLoss, SpEERLoss
+from model.loss import Loss, SpETLoss, SpERTLoss, SpEERLoss, SpRTLoss
 from model.sampling import Sampler
 
 from typing import List, Dict, Tuple, Any, Type
@@ -40,7 +40,9 @@ class BaseTrainer:
 
         # logging
         name = str(datetime.datetime.now()).replace(' ', '_')
-        self._log_path = os.path.join(self.args.log_path, self.args.label, name)
+        self.args.label = self.args.label if self.args.label else ''
+        self._log_path = os.path.join(self.args.log_path, self.args.label, name) if not (
+            args.timestamp_given) else self.args.log_path
         util.create_directories_dir(self._log_path)
 
         if hasattr(args, 'save_path'):
@@ -167,7 +169,8 @@ class SpERTTrainer(BaseTrainer):
         # sampler (create and batch training/evaluation samples)
         self._sampler = Sampler(processes=args.sampling_processes, limit=args.sampling_limit)
 
-    def train(self, train_path: str, valid_path: str, types_path: str, input_reader_cls: BaseInputReader):
+    def train(self, train_path: str, valid_path: str, types_path: str, input_reader_cls: BaseInputReader, 
+              skip_saving=False):
         args = self.args
         train_label, valid_label = 'train', 'valid'
 
@@ -251,16 +254,18 @@ class SpERTTrainer(BaseTrainer):
         name = 'final_model' if not args.timestamp_given else ''
         extra = dict(epoch=args.epochs, updates_epoch=updates_epoch, epoch_iteration=0)
         global_iteration = args.epochs * updates_epoch
-        self._save_model(self._save_path, model, global_iteration,
-                         optimizer=optimizer if self.args.save_optimizer else None, extra=extra,
-                         include_iteration=False, name=name)
-
+        if not args.skip_saving:
+            self._save_model(self._save_path, model, global_iteration,
+                            optimizer=optimizer if self.args.save_optimizer else None, extra=extra,
+                            include_iteration=False, name=name)
+            self._logger.info("Saved in: %s" % self._save_path)
         self._logger.info("Logged in: %s" % self._log_path)
-        self._logger.info("Saved in: %s" % self._save_path)
+        
 
         self._sampler.join()
 
-    def eval(self, eval_path: str, train_path: str, types_path: str, input_reader_cls: BaseInputReader):
+    def eval(self, eval_path: str, train_path: str, predicted_entities_path: str, 
+             types_path: str, input_reader_cls: BaseInputReader):
         args = self.args
         dataset_label = 'test'
 
@@ -295,24 +300,23 @@ class SpERTTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
+        ner_eval, rel_eval, raw_output = self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
         self._sampler.join()
+
+        # TODO: fix this function
+        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+
+        return ner_eval, rel_eval
 
     def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader):
         args = self.args
         dataset_label = document_data['guid']
 
-        self._logger.info("Model: %s" % args.model_type)
-
-        # create log csv files
-        self._init_eval_logging(dataset_label)
-
         # read datasets
         input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
         input_reader.read(document_data)
-        self._log_datasets(input_reader)
 
         # create model
         model_class = models.get_model(self.args.model_type)
@@ -330,11 +334,10 @@ class SpERTTrainer(BaseTrainer):
                                             size_embedding=self.args.size_embedding,
                                             freeze_transformer=self.args.freeze_transformer,
                                             feature_enhancer=self.args.feature_enhancer)
-
         model.to(self._device)
 
         # do inference
-        outputs = self._infer(model, input_reader.get_dataset(dataset_label), input_reader)
+        _, _, outputs = self._eval(model, input_reader.get_dataset(dataset_label), input_reader, inference_only=True)
 
         return outputs
 
@@ -379,66 +382,9 @@ class SpERTTrainer(BaseTrainer):
 
         return iteration
 
-    def _infer(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
-               epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
-
-        s_t = time.time()
-        infer_times = []
-        eval_times = []
-        # create batch sampler
-        sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
-                                                    input_reader.context_size, truncate=False)
-
-        # create evaluator
-        evaluator = Evaluator(dataset, input_reader, self._tokenizer,
-                              self.args.rel_filter_threshold, self.args.example_count,
-                              self._examples_path, epoch, dataset.label)
-        sequences = []
-        entities = []
-        relations = []
-        with torch.no_grad():
-            model.eval()
-            batch_count = 0
-
-            # iterate batches
-            total = math.ceil(dataset.document_count / self.args.eval_batch_size)
-            for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
-                # move batch to selected device
-                batch = batch.to(self._device)
-
-                batch_size = batch.encodings.shape[0]
-
-                # run model (forward pass)
-                i_t = time.time()
-                entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                         batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
-                                         evaluate=True)
-                infer_times.append(time.time() - i_t)
-
-                # evaluate batch
-                # get maximum activation (index of predicted entity type)
-                batch_entity_types = entity_clf.argmax(dim=-1)
-                # apply entity sample mask
-                batch_entity_types *= batch.entity_sample_masks.long()
-                e_t = time.time()
-                
-                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
-                for i in range(batch_size):
-                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
-                    entities.append(batch_entities[i])
-                    relations.append(batch_relations[i])
-                eval_times.append(time.time() - e_t)
-                batch_count += 1
-
-        av_it = sum(infer_times) / len(infer_times)
-        av_et = sum(eval_times) / len(eval_times)
-        print(f'Inference time is {time.time() - s_t} seconds for {total} sentences. Average infer time is '
-              f'{av_it} seconds and average evaluate time is {av_et} seconds.')
-
-        return sequences, entities, relations
 
     def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
-              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0, inference_only: bool = False):
         self._logger.info("Evaluate: %s" % dataset.label)
 
         if isinstance(model, DataParallel):
@@ -453,16 +399,20 @@ class SpERTTrainer(BaseTrainer):
         # create batch sampler
         sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
                                                     input_reader.context_size, truncate=False)
-
+        sequences = []
+        entities = []
+        relations = []
         with torch.no_grad():
             model.eval()
             print("evaluating...")
             print("DEVICE:", self._device)
             # iterate batches
             total = math.ceil(dataset.document_count / self.args.eval_batch_size)
+            batch_count = 0
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
+                batch_size = batch.encodings.shape[0]
                 # run model (forward pass)
                 entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
                                                   batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
@@ -473,15 +423,25 @@ class SpERTTrainer(BaseTrainer):
                 batch_entity_types = entity_clf.argmax(dim=-1)
                 # apply entity sample mask
                 batch_entity_types *= batch.entity_sample_masks.long()
-                evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
 
-        global_iteration = epoch * updates_epoch + iteration
-        ner_eval, rel_eval, rel_nec_eval = evaluator.compute_scores()
-        self._log_eval(*ner_eval, *rel_eval, *rel_nec_eval,
-                       epoch, iteration, global_iteration, dataset.label)
+                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, 
+                    rel_clf, rels, batch, return_conversions=True)
+                for i in range(batch_size):
+                    sequences.append(evaluator._sequences[batch_count*batch_size+i])
+                    entities.append(batch_entities[i])
+                    relations.append(batch_relations[i])
+                batch_count += 1
 
-        if self.args.store_examples:
-            evaluator.store_examples()
+        if not inference_only:
+            global_iteration = epoch * updates_epoch + iteration
+            ner_eval, rel_eval, rel_nec_eval = evaluator.compute_scores()
+            self._log_eval(*ner_eval, *rel_eval, *rel_nec_eval,
+                        epoch, iteration, global_iteration, dataset.label)
+
+            if self.args.store_examples:
+                evaluator.store_examples()
+
+        return ner_eval, rel_eval, (sequences, entities, relations)
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())
@@ -607,7 +567,8 @@ class SpEERTrainer(BaseTrainer):
         # sampler (create and batch training/evaluation samples)
         self._sampler = Sampler(processes=args.sampling_processes, limit=args.sampling_limit)
 
-    def train(self, train_path: str, valid_path: str, types_path: str, input_reader_cls: BaseInputReader):
+    def train(self, train_path: str, valid_path: str, types_path: str, input_reader_cls: BaseInputReader,
+              skip_saving=False):
         args = self.args
         train_label, valid_label = 'train', 'valid'
 
@@ -695,16 +656,19 @@ class SpEERTrainer(BaseTrainer):
         name = 'final_model' if not args.timestamp_given else ''
         extra = dict(epoch=args.epochs, updates_epoch=updates_epoch, epoch_iteration=0)
         global_iteration = args.epochs * updates_epoch
-        self._save_model(self._save_path, model, global_iteration,
-                         optimizer=optimizer if self.args.save_optimizer else None, extra=extra,
-                         include_iteration=False, name=name)
+        if not args.skip_saving:
+            self._save_model(self._save_path, model, global_iteration,
+                            optimizer=optimizer if self.args.save_optimizer else None, extra=extra,
+                            include_iteration=False, name=name)
+            self._logger.info("Saved in: %s" % self._save_path)
 
         self._logger.info("Logged in: %s" % self._log_path)
-        self._logger.info("Saved in: %s" % self._save_path)
-
         self._sampler.join()
 
-    def eval(self, train_path: str, eval_path: str, types_path: str, input_reader_cls: BaseInputReader):
+        return model
+
+    def eval(self, eval_path: str, train_path: str, predicted_entities_path: str, 
+             types_path: str, input_reader_cls: BaseInputReader):
         args = self.args
         train_label = 'train'
         eval_label = 'test'
@@ -745,24 +709,25 @@ class SpEERTrainer(BaseTrainer):
 
         # evaluate
         entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
-        self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
+        ner_eval, rel_eval, raw_output = self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
         self._sampler.join()
 
-    def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader, knn_module: Any):
+        # TODO: fix this function
+        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+
+        return ner_eval, rel_eval
+
+    def infer(self, document_data: Dict[str, Any], types_path: str, 
+              input_reader_cls: BaseInputReader, entity_knn_module: Any, rel_knn_module: Any):
         args = self.args
         dataset_label = document_data['guid']
-
-        self._logger.info("Model: %s" % args.model_type)
-
-        # create log csv files
-        self._init_eval_logging(dataset_label)
 
         # read datasets
         input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
         input_reader.read(document_data)
-        self._log_datasets(input_reader)
+        inference_dataset = input_reader.get_dataset(dataset_label)
 
         # create model
         model_class = models.get_model(self.args.model_type)
@@ -783,8 +748,11 @@ class SpEERTrainer(BaseTrainer):
 
         model.to(self._device)
 
+        #TODO: this needs to be moved to load inference model    
+        # entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+
         # do inference
-        outputs = self._infer(model, input_reader.get_dataset(dataset_label), input_reader)
+        _, _, raw_output = self._eval(model, inference_dataset, entity_knn_module, rel_knn_module, input_reader)
 
         return outputs
 
@@ -854,65 +822,6 @@ class SpEERTrainer(BaseTrainer):
 
         return iteration
 
-    # TODO: fix this
-    def _infer(self, model: torch.nn.Module, dataset: Dataset, input_reader: JsonInputReader,
-               epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
-
-        s_t = time.time()
-        infer_times = []
-        eval_times = []
-        # create batch sampler
-        sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
-                                                    input_reader.context_size, truncate=False)
-
-        # create evaluator
-        evaluator = Evaluator(dataset, input_reader, self._tokenizer,
-                              self.args.rel_filter_threshold, self.args.example_count,
-                              self._examples_path, epoch, dataset.label)
-        sequences = []
-        entities = []
-        relations = []
-        with torch.no_grad():
-            model.eval()
-            batch_count = 0
-
-            # iterate batches
-            total = math.ceil(dataset.document_count / self.args.eval_batch_size)
-            for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
-                # move batch to selected device
-                batch = batch.to(self._device)
-
-                batch_size = batch.encodings.shape[0]
-
-                # run model (forward pass)
-                i_t = time.time()
-                entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
-                                         batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
-                                         evaluate=True)
-                infer_times.append(time.time() - i_t)
-
-                # evaluate batch
-                # get maximum activation (index of predicted entity type)
-                batch_entity_types = entity_clf.argmax(dim=-1)
-
-                # apply entity sample mask
-                batch_entity_types *= batch.entity_sample_masks.long()
-                e_t = time.time()
-                
-                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
-                for i in range(batch_size):
-                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
-                    entities.append(batch_entities[i])
-                    relations.append(batch_relations[i])
-                eval_times.append(time.time() - e_t)
-                batch_count += 1
-
-        av_it = sum(infer_times) / len(infer_times)
-        av_et = sum(eval_times) / len(eval_times)
-        print(f'Inference time is {time.time() - s_t} seconds for {total} sentences. Average infer time is '
-              f'{av_it} seconds and average evaluate time is {av_et} seconds.')
-
-        return sequences, entities, relations
 
     def _index(self, model: torch.nn.Module, dataset: Dataset,
                input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
@@ -923,8 +832,8 @@ class SpEERTrainer(BaseTrainer):
             model = model.module
 
         # load knn modules (with hardcoded settings)
-        entity_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="entity_knn_module")
-        rel_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="rel_knn_module")
+        entity_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="entity_knn_module", device="cpu")
+        rel_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="rel_knn_module", device="cpu")
         entity_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
         rel_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
 
@@ -962,7 +871,7 @@ class SpEERTrainer(BaseTrainer):
 
     def _eval(self, model: torch.nn.Module, dataset: Dataset, entity_knn_module: Any,
               rel_knn_module: Any, input_reader: JsonInputReader, 
-              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+              epoch: int = 0, updates_epoch: int = 0, iteration: int = 0, inference_only=False):
         self._logger.info("Evaluate: %s" % dataset.label)
 
         if isinstance(model, DataParallel):
@@ -977,21 +886,27 @@ class SpEERTrainer(BaseTrainer):
         # create batch sampler
         sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
                                                     input_reader.context_size, truncate=False)         
-
+        sequences = []
+        entities = []
+        relations = []
         with torch.no_grad():
             model.eval()
+            batch_count = 0
             print("evaluating...")
             print("DEVICE:", self._device)
             # iterate batches
             total = math.ceil(dataset.document_count / self.args.eval_batch_size)
+
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
+                batch_size = batch.encodings.shape[0]
                 # run model (forward pass)
                 entity_clf, rel_clf, rels = model(entity_knn_module, rel_knn_module, batch.entity_entries,
                                             batch.encodings, batch.ctx_masks, batch.entity_masks,batch.entity_sizes, 
                                             batch.entity_spans, batch.entity_sample_masks, mode="eval")
 
+                
                 # evaluate batch (TODO: what is this?) This block necessary?
                 # get maximum activation (index of predicted entity type)
                 batch_entity_types = entity_clf.argmax(dim=-1)
@@ -999,15 +914,424 @@ class SpEERTrainer(BaseTrainer):
                 batch_entity_types *= batch.entity_sample_masks.long()
                 ############
 
-                evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
+                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
+                for i in range(batch_size):
+                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
+                    entities.append(batch_entities[i])
+                    relations.append(batch_relations[i])
+                batch_count += 1
 
-        global_iteration = epoch * updates_epoch + iteration
-        ner_eval, rel_eval, rel_nec_eval = evaluator.compute_scores()
-        self._log_eval(*ner_eval, *rel_eval, *rel_nec_eval,
-                       epoch, iteration, global_iteration, dataset.label)
+        if not inference_only:
+            global_iteration = epoch * updates_epoch + iteration
+            ner_eval, rel_eval, rel_nec_eval = evaluator.compute_scores()
+            self._log_eval(*ner_eval, *rel_eval, *rel_nec_eval,
+                        epoch, iteration, global_iteration, dataset.label)
 
-        if self.args.store_examples:
-            evaluator.store_examples() 
+            if self.args.store_examples:
+                evaluator.store_examples() 
+
+        return ner_eval, rel_eval (sequences, entities, relations)
+
+    def _get_optimizer_params(self, model):
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_params = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
+             'weight_decay': self.args.weight_decay},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
+
+        return optimizer_params
+
+    def _log_train(self, optimizer: Optimizer, loss: float, epoch: int,
+                   iteration: int, global_iteration: int, label: str):
+        # average loss
+        avg_loss = loss / self.args.train_batch_size
+        # get current learning rate
+        lr = self._get_lr(optimizer)[0]
+
+        # log to tensorboard
+        self._log_tensorboard(label, 'loss', loss, global_iteration)
+        self._log_tensorboard(label, 'loss_avg', avg_loss, global_iteration)
+        self._log_tensorboard(label, 'lr', lr, global_iteration)
+
+        # log to csv
+        self._log_csv(label, 'loss', loss, epoch, iteration, global_iteration)
+        self._log_csv(label, 'loss_avg', avg_loss, epoch, iteration, global_iteration)
+        self._log_csv(label, 'lr', lr, epoch, iteration, global_iteration)
+
+    def _log_eval(self, ner_prec_micro: float, ner_rec_micro: float, ner_f1_micro: float,
+                  ner_prec_macro: float, ner_rec_macro: float, ner_f1_macro: float,
+
+                  rel_prec_micro: float, rel_rec_micro: float, rel_f1_micro: float,
+                  rel_prec_macro: float, rel_rec_macro: float, rel_f1_macro: float,
+
+                  rel_nec_prec_micro: float, rel_nec_rec_micro: float, rel_nec_f1_micro: float,
+                  rel_nec_prec_macro: float, rel_nec_rec_macro: float, rel_nec_f1_macro: float,
+                  epoch: int, iteration: int, global_iteration: int, label: str):
+
+        # log to tensorboard
+        self._log_tensorboard(label, 'eval/ner_prec_micro', ner_prec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/ner_recall_micro', ner_rec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/ner_f1_micro', ner_f1_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/ner_prec_macro', ner_prec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/ner_recall_macro', ner_rec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/ner_f1_macro', ner_f1_macro, global_iteration)
+
+        self._log_tensorboard(label, 'eval/rel_prec_micro', rel_prec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_recall_micro', rel_rec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_f1_micro', rel_f1_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_prec_macro', rel_prec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_recall_macro', rel_rec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_f1_macro', rel_f1_macro, global_iteration)
+
+        self._log_tensorboard(label, 'eval/rel_nec_prec_micro', rel_nec_prec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_nec_recall_micro', rel_nec_rec_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_nec_f1_micro', rel_nec_f1_micro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_nec_prec_macro', rel_nec_prec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_nec_recall_macro', rel_nec_rec_macro, global_iteration)
+        self._log_tensorboard(label, 'eval/rel_nec_f1_macro', rel_nec_f1_macro, global_iteration)
+
+        # log to csv
+        self._log_csv(label, 'eval', ner_prec_micro, ner_rec_micro, ner_f1_micro,
+                      ner_prec_macro, ner_rec_macro, ner_f1_macro,
+
+                      rel_prec_micro, rel_rec_micro, rel_f1_micro,
+                      rel_prec_macro, rel_rec_macro, rel_f1_macro,
+
+                      rel_nec_prec_micro, rel_nec_rec_micro, rel_nec_f1_micro,
+                      rel_nec_prec_macro, rel_nec_rec_macro, rel_nec_f1_macro,
+                      epoch, iteration, global_iteration)
+
+    def _log_datasets(self, input_reader):
+        self._logger.info("Relation type count: %s" % input_reader.relation_type_count)
+        self._logger.info("Entity type count: %s" % input_reader.entity_type_count)
+
+        self._logger.info("Entities:")
+        for e in input_reader.entity_types.values():
+            self._logger.info(e.verbose_name + '=' + str(e.index))
+
+        self._logger.info("Relations:")
+        for r in input_reader.relation_types.values():
+            self._logger.info(r.verbose_name + '=' + str(r.index))
+
+        for k, d in input_reader.datasets.items():
+            self._logger.info('Dataset: %s' % k)
+            self._logger.info("Document count: %s" % d.document_count)
+            self._logger.info("Relation count: %s" % d.relation_count)
+            self._logger.info("Entity count: %s" % d.entity_count)
+
+        self._logger.info("Context size: %s" % input_reader.context_size)
+
+    def _init_train_logging(self, label):
+        self._add_dataset_logging(label,
+                                  data={'lr': ['lr', 'epoch', 'iteration', 'global_iteration'],
+                                        'loss': ['loss', 'epoch', 'iteration', 'global_iteration'],
+                                        'loss_avg': ['loss_avg', 'epoch', 'iteration', 'global_iteration']})
+
+    def _init_eval_logging(self, label):
+        self._add_dataset_logging(label,
+                                  data={'eval': ['ner_prec_micro', 'ner_rec_micro', 'ner_f1_micro',
+                                                 'ner_prec_macro', 'ner_rec_macro', 'ner_f1_macro',
+                                                 'rel_prec_micro', 'rel_rec_micro', 'rel_f1_micro',
+                                                 'rel_prec_macro', 'rel_rec_macro', 'rel_f1_macro',
+                                                 'rel_nec_prec_micro', 'rel_nec_rec_micro', 'rel_nec_f1_micro',
+                                                 'rel_nec_prec_macro', 'rel_nec_rec_macro', 'rel_nec_f1_macro',
+                                                 'epoch', 'iteration', 'global_iteration']})
+
+class SpRTTrainer(BaseTrainer):
+    """ Relation extraction training and evaluation """
+
+    def __init__(self, args: argparse.Namespace):
+        super().__init__(args)
+
+        # byte-pair encoding
+        # tokenizer_path = os.path.join(args.tokenizer_path, 'vocab.txt')
+        self._tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path,
+                                                        do_lower_case=args.lowercase,
+                                                        cache_dir=args.cache_path)
+
+        # path to export relation extraction examples to
+        self._examples_path = os.path.join(self._log_path, 'examples_%s_%s_epoch_%s.html')
+
+        # sampler (create and batch training/evaluation samples)
+        self._sampler = Sampler(processes=args.sampling_processes, limit=args.sampling_limit)
+
+    def train(self, train_path: str, valid_path: str, types_path: str, input_reader_cls: BaseInputReader, skip_saving=False):
+        args = self.args
+        train_label, valid_label = 'train', 'valid'
+
+        self._logger.info("Datasets: %s, %s" % (train_path, valid_path))
+        self._logger.info("Model type: %s" % args.model_type)
+
+        # create log csv files
+        self._init_train_logging(train_label)
+        self._init_eval_logging(valid_label)
+
+        # read datasets
+        input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
+        input_reader.read({train_label: train_path, valid_label: valid_path})
+        self._log_datasets(input_reader)
+
+        train_dataset = input_reader.get_dataset(train_label)
+        train_sample_count = train_dataset.document_count
+        updates_epoch = train_sample_count // args.train_batch_size
+        updates_total = updates_epoch * args.epochs
+
+        validation_dataset = input_reader.get_dataset(valid_label)
+
+        self._logger.info("Updates per epoch: %s" % updates_epoch)
+        self._logger.info("Updates total: %s" % updates_total)
+
+        # create model
+        model_class = models.get_model(self.args.model_type)
+
+        # load model
+        model = model_class.from_pretrained(self.args.model_path,
+                                            cache_dir=self.args.cache_path,
+                                            cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
+                                            relation_types=input_reader.relation_type_count - 1,
+                                            entity_types=input_reader.entity_type_count,
+                                            max_pairs=self.args.max_pairs,
+                                            prop_drop=self.args.prop_drop,
+                                            size_embedding=self.args.size_embedding,
+                                            freeze_transformer=self.args.freeze_transformer,
+                                            feature_enhancer=self.args.feature_enhancer)
+
+        # SpERT is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
+        # If you still want to train SpERT on multiple GPUs, uncomment the following lines
+        # parallelize model
+        if self._device.type != 'cpu':
+            model = torch.nn.DataParallel(model)
+            print("GPU's available: ", torch.cuda.device_count())
+        model.to(self._device)
+
+        # create optimizer
+        optimizer_params = self._get_optimizer_params(model)
+        optimizer = AdamW(optimizer_params, lr=args.lr, weight_decay=args.weight_decay, correct_bias=False)
+        # create scheduler
+        scheduler = transformers.get_linear_schedule_with_warmup(optimizer,
+                                                                 num_warmup_steps=args.lr_warmup * updates_total,
+                                                                 num_training_steps=updates_total)
+        # create loss function
+        rel_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
+        compute_loss = SpRTLoss(rel_criterion, model, optimizer, scheduler, args.max_grad_norm)
+
+        # eval validation set
+        if args.init_eval:
+            self._eval(model, validation_dataset, input_reader, 0, updates_epoch)
+
+        # train
+        for epoch in range(args.epochs):
+            # train epoch
+            self._train_epoch(model, compute_loss, optimizer, train_dataset, updates_epoch, epoch,
+                              input_reader.context_size, input_reader.relation_type_count)
+
+            # eval validation sets
+            if not args.final_eval or (epoch == args.epochs - 1):
+                self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+
+        # save final model
+        name = 'final_model' if not args.timestamp_given else ''
+        extra = dict(epoch=args.epochs, updates_epoch=updates_epoch, epoch_iteration=0)
+        global_iteration = args.epochs * updates_epoch
+        if not args.skip_saving:
+            self._save_model(self._save_path, model, global_iteration,
+                            optimizer=optimizer if self.args.save_optimizer else None, extra=extra,
+                            include_iteration=False, name=name)
+            self._logger.info("Saved in: %s" % self._save_path)
+
+        self._logger.info("Logged in: %s" % self._log_path)
+        self._sampler.join()
+
+        return model
+
+    def eval(self, eval_path: str, train_path: str, predicted_entities_path: str, 
+             types_path: str, input_reader_cls: BaseInputReader):
+        args = self.args
+        predicted_entities_label = 'predicted_entities'
+        eval_label = 'test'
+
+        self._init_eval_logging(eval_label)
+
+        # read datasets
+        input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
+
+        input_reader.read({predicted_entities_label: predicted_entities_path})
+        predicted_entities_dataset = input_reader.get_dataset(predicted_entities_label)
+        self._log_datasets(input_reader)
+
+        input_reader.read({eval_label: eval_path})
+        eval_dataset = input_reader.get_dataset(eval_label)
+        self._log_datasets(input_reader)
+
+        # create model
+        model_class = models.get_model(self.args.model_type)
+
+        # load model
+        model = model_class.from_pretrained(self.args.model_path,
+                                            cache_dir=self.args.cache_path,
+                                            # additional model parameters
+                                            cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
+                                            # no node for 'none' class
+                                            relation_types=input_reader.relation_type_count - 1,
+                                            entity_types=input_reader.entity_type_count,
+                                            max_pairs=self.args.max_pairs,
+                                            prop_drop=self.args.prop_drop,
+                                            size_embedding=self.args.size_embedding,
+                                            freeze_transformer=self.args.freeze_transformer,
+                                            feature_enhancer=self.args.feature_enhancer)
+
+        model.to(self._device)
+
+        # evaluate
+        ner_eval, rel_eval, raw_output = self._eval(model, eval_dataset, predicted_entities_dataset, input_reader)
+        self._logger.info("Logged in: %s" % self._log_path)
+        self._sampler.join()
+
+        # TODO: fix this function
+        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+
+        return ner_eval, rel_eval
+
+    def infer(self, document_data: Dict[str, Any], types_path: str, input_reader_cls: BaseInputReader):
+        args = self.args
+        dataset_label = document_data['guid']
+
+        self._logger.info("Model: %s" % args.model_type)
+
+        # create log csv files
+        self._init_eval_logging(dataset_label)
+
+        # read datasets
+        input_reader = input_reader_cls(types_path, self._tokenizer, self._logger)
+        input_reader.read(document_data)
+        self._log_datasets(input_reader)
+
+        # create model
+        model_class = models.get_model(self.args.model_type)
+
+        # load model
+        model = model_class.from_pretrained(self.args.model_path,
+                                            cache_dir=self.args.cache_path,
+                                            # additional model parameters
+                                            cls_token=self._tokenizer.convert_tokens_to_ids('[CLS]'),
+                                            # no node for 'none' class
+                                            relation_types=input_reader.relation_type_count - 1,
+                                            entity_types=input_reader.entity_type_count,
+                                            max_pairs=self.args.max_pairs,
+                                            prop_drop=self.args.prop_drop,
+                                            size_embedding=self.args.size_embedding,
+                                            freeze_transformer=self.args.freeze_transformer,
+                                            feature_enhancer=self.args.feature_enhancer)
+
+        model.to(self._device)
+
+        # do inference
+        _, _, outputs = self._eval(model, input_reader.get_dataset(dataset_label), input_reader, inference_only=True)
+
+        return outputs
+
+    def _train_epoch(self, model: torch.nn.Module, compute_loss: Loss, optimizer: Optimizer, dataset: Dataset,
+                     updates_epoch: int, epoch: int, context_size: int, rel_type_count: int):
+        self._logger.info("Train epoch: %s" % epoch)
+
+        # randomly shuffle data
+        order = torch.randperm(dataset.document_count)
+        sampler = self._sampler.create_train_sampler(dataset, self.args.train_batch_size, self.args.max_span_size,
+                                                     context_size, self.args.neg_entity_count,
+                                                     self.args.neg_relation_count, order=order, truncate=True, relations_only=True)
+
+        model.zero_grad()
+
+        iteration = 0
+        total = dataset.document_count // self.args.train_batch_size
+        for batch in tqdm(sampler, total=total, desc='Train epoch %s' % epoch):
+            model.train()
+            batch = batch.to(self._device)
+
+            # relation types to one-hot encoding
+            rel_types_onehot = torch.zeros([batch.rel_types.shape[0], batch.rel_types.shape[1],
+                                            rel_type_count], dtype=torch.float32).to(self._device)
+            rel_types_onehot.scatter_(2, batch.rel_types.unsqueeze(2), 1)
+            rel_types_onehot = rel_types_onehot[:, :, 1:]  # all zeros for 'none' relation
+
+            # forward step
+            rel_logits = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
+                                              batch.entity_sizes, batch.rels, batch.rel_masks)
+
+            # compute loss and optimize parameters
+            batch_loss = compute_loss.compute(rel_logits, rel_types_onehot, batch.rel_sample_masks)
+
+            # logging
+            iteration += 1
+            global_iteration = epoch * updates_epoch + iteration
+
+            if global_iteration % self.args.train_log_iter == 0:
+                self._log_train(optimizer, batch_loss, epoch, iteration, global_iteration, dataset.label)
+
+        return iteration
+
+    def _eval(self, model: torch.nn.Module, eval_dataset: Dataset, predicted_entities_dataset: Dataset, 
+              input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, 
+              iteration: int = 0, inference_only: bool = False):
+        self._logger.info("Evaluate: %s" % eval_dataset.label)
+
+        if isinstance(model, DataParallel):
+            # currently no multi GPU support during evaluation
+            model = model.module
+
+        assert len(eval_dataset.document_count)==len(predicted_entities_dataset.document_count)
+        
+        # create evaluator
+        evaluator = Evaluator(eval_dataset, input_reader, self._tokenizer,
+                              self.args.rel_filter_threshold, self.args.example_count,
+                              self._examples_path, epoch, eval_dataset.label)
+
+        # create batch sampler
+        sampler = self._sampler.create_eval_sampler(predicted_entities_dataset, self.args.eval_batch_size, self.args.max_span_size,
+                                                    input_reader.context_size, truncate=False, relations_only=True)
+        sequences = []
+        entities = []
+        relations = []
+        with torch.no_grad():
+            model.eval()
+            print("evaluating...")
+            print("DEVICE:", self._device)
+            # iterate batches
+            total = math.ceil(predicted_entities_dataset.document_count / self.args.eval_batch_size)
+            batch_count = 0
+            for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
+                # move batch to selected device
+                batch = batch.to(self._device)
+                batch_size = batch.encodings.shape[0]
+
+                # run model (forward pass)
+                entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
+                                                  batch.entity_sizes, input_reader.entity_type_count, batch.entity_spans, 
+                                                  batch.entity_sample_masks, evaluate=True)
+
+                # evaluate batch
+                # get maximum activation (index of predicted entity type)
+                batch_entity_types = entity_clf.argmax(dim=-1)
+                # apply entity sample mask
+                batch_entity_types *= batch.entity_sample_masks.long()
+                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
+                for i in range(batch_size):
+                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
+                    entities.append(batch_entities[i])
+                    relations.append(batch_relations[i])
+                batch_count += 1
+        
+        if not inference_only:
+            global_iteration = epoch * updates_epoch + iteration
+            ner_eval, rel_eval, rel_nec_eval = evaluator.compute_scores()
+            self._log_eval(*ner_eval, *rel_eval, *rel_nec_eval,
+                        epoch, iteration, global_iteration, eval_dataset.label)
+
+            if self.args.store_examples:
+                evaluator.store_examples()
+
+        return ner_eval, rel_eval, (sequences, entities, relations)
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())

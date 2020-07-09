@@ -66,6 +66,7 @@ def train_argparser():
     arg_parser.add_argument('--train_log_iter', type=int, default=1, help="Log training process every x iterations")
     arg_parser.add_argument('--final_eval', action='store_true', default=False,
                             help="Evaluate the model only after training, not at every epoch")
+    arg_parser.add_argument('--skip_saving', action='store_true', default=False, help="Skip saving of pytorch models")
 
     # Model / Training
     arg_parser.add_argument('--train_batch_size', type=int, default=2, help="Training batch size")
@@ -94,6 +95,7 @@ def eval_argparser():
     arg_parser.add_argument('--neg_relation_count', type=int, default=100,
                             help="Number of negative relation samples per document (sentence)")
     arg_parser.add_argument('--train_path', type=str, help="Path to train dataset to encode for evaluation")
+    arg_parser.add_argument('--predicted_entities_path', type=str, help="Path to the predicted entities (SpRT case)")
     arg_parser.add_argument('--eval_path', type=str, help="Path to dataset to evaluate")
 
     _add_common_args(arg_parser)

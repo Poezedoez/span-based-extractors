@@ -1,5 +1,7 @@
 import copy
 import multiprocessing as mp
+import os
+import pathlib
 
 def _yield_configs(arg_parser, args, verbose=True):
     _print = (lambda x: print(x)) if verbose else lambda x: x
@@ -50,6 +52,7 @@ def process_configs(target, arg_parser):
         p.join()
 
 def _read_config(path):
+    path = pathlib.Path(path)
     lines = open(path).readlines()
 
     runs = []
