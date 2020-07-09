@@ -26,7 +26,7 @@ def _train(skip_saving=False):
 def __eval(run_args, queue=None):
     trainer = get_trainer(run_args.model_type)(run_args)
     trainer.eval(train_path=run_args.train_path, eval_path=run_args.eval_path, 
-                 predicted_entities_path=run_args.prediced_entities_path, 
+                 predicted_entities_path=run_args.predicted_entities_path, 
                  types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader)
 
 def _eval():
