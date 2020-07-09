@@ -156,6 +156,7 @@ class BiLSTM(FeatureEnhancer):
 
 _FEATURE_ENHANCERS = {
     'pass': Pass,
+    'transformer': Pass,
     'map': MAP,
     'mlp': MLP,
     'bilstm': BiLSTM
