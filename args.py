@@ -15,6 +15,8 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--sampling_processes', type=int, default=4,
                             help="Number of sampling processes. 0 = no multiprocessing for sampling")
     arg_parser.add_argument('--sampling_limit', type=int, default=100, help="Maximum number of sample batches in queue")
+    arg_parser.add_argument('--type_key', type=str, default="type", help="The key name of the entity relation type/label/class etc.")
+
 
     # Logging
     arg_parser.add_argument('--label', type=str, help="Label of run. Used as the directory name of logs/models")
@@ -39,6 +41,7 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--rel_filter_threshold', type=float, default=0.4, help="Filter threshold for relations")
     arg_parser.add_argument('--size_embedding', type=int, default=25, help="Dimensionality of size embedding")
     arg_parser.add_argument('--prop_drop', type=float, default=0.1, help="Probability of dropout used in SpERT")
+    arg_parser.add_argument('--k', type=int, help="amount of neighbors to consider (SpEER case)", default=100)
     arg_parser.add_argument('--freeze_transformer', action='store_true', default=False, help="Freeze BERT weights")
     arg_parser.add_argument('--timestamp_given', action='store_true', default=False, help="timestamp is given, use raw save path")
 

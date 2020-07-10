@@ -51,7 +51,7 @@ class SpERT(BertPreTrainedModel):
         # weight initialization
         self.init_weights()
 
-        if freeze_transformer or feature_enhancer != "pass":
+        if freeze_transformer or feature_enhancer not in {"pass", "transformer"}:
             print("Freeze transformer weights")
 
             # freeze all transformer weights
@@ -251,7 +251,7 @@ class SpEER(BertPreTrainedModel):
 
     def __init__(self, config: BertConfig, cls_token: int, relation_types: int, entity_types: int,
                  size_embedding: int, prop_drop: float, freeze_transformer: bool, max_pairs: int = 100, 
-                 encoding_size: int = 200, type_key="type_index", feature_enhancer: str = "pass"):
+                 encoding_size: int = 200, feature_enhancer: str = "pass"):
         super(SpEER, self).__init__(config)
 
         # BERT model
@@ -269,12 +269,11 @@ class SpEER(BertPreTrainedModel):
         self._relation_types = relation_types
         self._entity_types = entity_types
         self._max_pairs = max_pairs
-        self._type_key = type_key
 
         # weight initialization
         self.init_weights()
 
-        if freeze_transformer or feature_enhancer != "pass":
+        if freeze_transformer or feature_enhancer not in {"pass", "transformer"}:
             print("Freeze transformer weights")
 
             # freeze all transformer weights
@@ -319,7 +318,7 @@ class SpEER(BertPreTrainedModel):
 
         return entity_clf, rel_clf
 
-    def _forward_eval(self, entity_knn_module, rel_knn_module, entity_entries: List[List[Dict]], 
+    def _forward_eval(self, entity_knn_module, rel_knn_module, entity_entries: List[List[Dict]], type_key: str,
                       encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor, 
                       entity_sizes: torch.tensor, entity_spans: torch.tensor = None, 
                       entity_sample_mask: torch.tensor = None, verbose=True):
@@ -342,7 +341,7 @@ class SpEER(BertPreTrainedModel):
         size_embeddings = self.size_embeddings(entity_sizes)  # embed entity candidate sizes
         entity_encoding, entity_spans_pool = self._encode_entities(encodings, h, entity_masks, size_embeddings)
         entity_encoding_reshaped = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu()
-        entity_types, entity_neighbors = entity_knn_module.infer_(entity_encoding_reshaped, int, self._type_key)
+        entity_types, entity_neighbors = entity_knn_module.infer_(entity_encoding_reshaped, int, type_key)
         
         # print neighbor entities
         if verbose:
@@ -357,7 +356,7 @@ class SpEER(BertPreTrainedModel):
                 print("[ENT] {} >> {}".format(entity_entries_flat[i]["phrase"], entity_types[i]))
                 for j in range(min(len(neighbors), 5)):
                     n = neighbors[j]
-                    print("\t", n["phrase"], n["type"], n["type_index"])
+                    print("\t", n["phrase"], n["type_string"], n["type_index"])
                 print()
 
         entity_types = torch.tensor(entity_types).view(entity_encoding.shape[0], entity_encoding.shape[1]).to(device)
@@ -367,7 +366,7 @@ class SpEER(BertPreTrainedModel):
 
         # ignore entity candidates that do not constitute an actual entity for relations (based on classifier)
         relations, rel_masks, rel_sample_masks, rel_entries = self._filter_spans(entity_clf, entity_spans,
-                                                                    entity_sample_mask, entity_entries, ctx_size)
+                                                                    entity_sample_mask, entity_entries, ctx_size, type_key)
         rel_masks = rel_masks.float()
         rel_sample_masks = rel_sample_masks.float()
         h_large = h.unsqueeze(1).repeat(1, max(min(relations.shape[1], self._max_pairs), 1), 1, 1)
@@ -383,7 +382,7 @@ class SpEER(BertPreTrainedModel):
         rel_encoding_reshaped = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
         
         # encode and classify relations
-        rel_types, rel_neighbors = rel_knn_module.infer_(rel_encoding_reshaped, int, self._type_key)
+        rel_types, rel_neighbors = rel_knn_module.infer_(rel_encoding_reshaped, int, type_key)
 
         # print neighbor relations
         if verbose:
@@ -397,7 +396,7 @@ class SpEER(BertPreTrainedModel):
                 print("[REL] {} >> {}".format(rel_entries_flat[i]["phrase"], rel_types[i]))
                 for j in range(min(len(neighbors), 5)):
                     n = neighbors[j]
-                    print("\t", n["phrase"], n["type"], n["type_index"])
+                    print("\t", n["phrase"], n["type_string"], n[type_key])
                 print()
 
         rel_types = torch.LongTensor(rel_types).view(rel_encoding.shape[0], rel_encoding.shape[1]).to(device)
@@ -533,7 +532,7 @@ class SpEER(BertPreTrainedModel):
 
 
     #TODO: Needs checking of relation entries
-    def _filter_spans(self, entity_clf, entity_spans, entity_sample_mask, entity_entries, ctx_size):
+    def _filter_spans(self, entity_clf, entity_spans, entity_sample_mask, entity_entries, ctx_size, type_key):
         batch_size = entity_clf.shape[0]
         entity_logits_max = entity_clf.argmax(dim=-1) * entity_sample_mask.long()  # get entity type (including none)
         batch_relations = []
@@ -559,7 +558,7 @@ class SpEER(BertPreTrainedModel):
                     if i1 != i2:
                         rels.append((i1, i2))
                         phrase = "|{}| <TBD> |{}|".format(non_zero_entries[n]["phrase"], non_zero_entries[m]["phrase"])
-                        rel_entries.append({"phrase": phrase, "type": "<TBD>", self._type_key: "<TBD>"})
+                        rel_entries.append({"phrase": phrase, "type_string": "<TBD>", type_key: "<TBD>"})
                         rel_masks.append(sampling.create_rel_mask(s1, s2, ctx_size))
                         sample_masks.append(1)
 
@@ -569,7 +568,7 @@ class SpEER(BertPreTrainedModel):
                 batch_rel_masks.append(torch.tensor([[0] * ctx_size], dtype=torch.bool))
                 batch_rel_sample_masks.append(torch.tensor([0], dtype=torch.bool))
                 phrase = ""
-                batch_rel_entries.append([{"phrase": phrase, "type": "<TBD>", self._type_key: "<TBD>"}])
+                batch_rel_entries.append([{"phrase": phrase, "type_string": "<TBD>", type_key: "<TBD>"}])
             else:
                 # case: more than two spans classified as entities
                 batch_relations.append(torch.tensor(rels, dtype=torch.long))
@@ -621,7 +620,7 @@ class SpRT(BertPreTrainedModel):
         # weight initialization
         self.init_weights()
 
-        if freeze_transformer or feature_enhancer != "pass":
+        if freeze_transformer or feature_enhancer not in {"pass", "transformer"}:
             print("Freeze transformer weights")
 
             # freeze all transformer weights

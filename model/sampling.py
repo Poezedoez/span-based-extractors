@@ -125,16 +125,20 @@ class Sampler:
 
     def create_train_sampler(self, dataset: Dataset, batch_size: int, max_span_size: int,
                              context_size: int, neg_entity_count: int, neg_rel_count: int,
-                             order: Iterable = None, truncate: bool = False, relations_only = False):
+                             order: Iterable = None, truncate: bool = False, relations_only = False,
+                             type_key = "type"):
         train_sampler = TrainSampler(dataset, batch_size, max_span_size, context_size,
                                      neg_entity_count, neg_rel_count, order, truncate,
-                                     self._manager, self._pool, self._processes, self._limit, relations_only)
+                                     self._manager, self._pool, self._processes, self._limit, relations_only,
+                                     type_key)
         return train_sampler
 
     def create_eval_sampler(self, dataset: Dataset, batch_size: int, max_span_size: int, context_size: int,
-                            order: Iterable = None, truncate: bool = False, relations_only = False):
+                            order: Iterable = None, truncate: bool = False, relations_only = False,
+                            type_key = "type"):
         eval_sampler = EvalSampler(dataset, batch_size, max_span_size, context_size,
-                                   order, truncate, self._manager, self._pool, self._processes, self._limit, relations_only)
+                                   order, truncate, self._manager, self._pool, self._processes, self._limit, relations_only,
+                                   type_key)
         return eval_sampler
 
     def join(self):
@@ -186,7 +190,7 @@ class BaseSampler(ABC):
 
 class TrainSampler(BaseSampler):
     def __init__(self, dataset, batch_size, max_span_size, context_size, neg_entity_count, neg_rel_count,
-                 order, truncate, manager, pool, processes, limit, relations_only):
+                 order, truncate, manager, pool, processes, limit, relations_only, type_key):
         super().__init__(_produce_train_batch, manager, pool, processes, limit)
 
         self._dataset = dataset
@@ -197,6 +201,7 @@ class TrainSampler(BaseSampler):
         self._neg_entity_count = neg_entity_count
         self._neg_rel_count = neg_rel_count
         self._relations_only = relations_only
+        self._type_key = type_key
 
         batches = self._dataset.iterate_documents(self._batch_size, order=order, truncate=truncate)
         self._prep_batches = self._prepare(batches)
@@ -205,7 +210,8 @@ class TrainSampler(BaseSampler):
         prep_batches = []
         for i, batch in enumerate(batches):
             prep_batches.append((i, batch, self._neg_entity_count, self._neg_rel_count,
-                                 self._max_span_size, self._context_size, self._semaphore, self._relations_only))
+                                 self._max_span_size, self._context_size, self._semaphore, 
+                                 self._relations_only, self._type_key))
 
         return prep_batches
 
@@ -216,7 +222,7 @@ class TrainSampler(BaseSampler):
 
 class EvalSampler(BaseSampler):
     def __init__(self, dataset, batch_size, max_span_size, context_size,
-                 order, truncate, manager, pool, processes, limit, relations_only):
+                 order, truncate, manager, pool, processes, limit, relations_only, type_key):
         super().__init__(_produce_eval_batch, manager, pool, processes, limit)
 
         self._dataset = dataset
@@ -224,6 +230,7 @@ class EvalSampler(BaseSampler):
         self._max_span_size = max_span_size
         self._context_size = context_size
         self._relations_only = relations_only
+        self._type_key = type_key
 
         batches = self._dataset.iterate_documents(self._batch_size, order=order, truncate=truncate)
         self._prep_batches = self._prepare(batches)
@@ -232,7 +239,8 @@ class EvalSampler(BaseSampler):
         prep_batches = []
 
         for i, batch in enumerate(batches):
-            prep_batches.append((i, batch, self._max_span_size, self._context_size, self._semaphore, self._relations_only))
+            prep_batches.append((i, batch, self._max_span_size, self._context_size, self._semaphore, 
+                                 self._relations_only, self._type_key))
 
         return prep_batches
 
@@ -242,14 +250,15 @@ class EvalSampler(BaseSampler):
 
 
 def _produce_train_batch(args):
-    i, docs, neg_entity_count, neg_rel_count, max_span_size, context_size, semaphore, relations_only = args
+    i, docs, neg_entity_count, neg_rel_count, max_span_size, context_size, semaphore, relations_only, type_key = args
 
     if semaphore is not None:
         semaphore.acquire()
 
     samples = []
     for d in docs:
-        sample = _create_train_sample(d, neg_entity_count, neg_rel_count, max_span_size, context_size, relations_only=relations_only)
+        sample = _create_train_sample(d, neg_entity_count, neg_rel_count, max_span_size, context_size, 
+                                      relations_only=relations_only, type_key=type_key)
         samples.append(sample)
 
     batch = _create_train_batch(samples)
@@ -258,21 +267,21 @@ def _produce_train_batch(args):
 
 
 def _produce_eval_batch(args):
-    i, docs, max_span_size, context_size, semaphore, relations_only = args
+    i, docs, max_span_size, context_size, semaphore, relations_only, type_key = args
 
     if semaphore is not None:
         semaphore.acquire()
 
     samples = []
     for d in docs:
-        sample = _create_eval_sample(d, max_span_size, context_size, relations_only=relations_only)
+        sample = _create_eval_sample(d, max_span_size, context_size, relations_only=relations_only, type_key=type_key)
         samples.append(sample)
 
     batch = _create_eval_batch(samples)
     return batch, i
 
 
-def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, context_size, type_key="type_index", relations_only=False):
+def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, context_size, type_key="type", relations_only=False):
     encoding = doc.encoding
     token_count = len(doc.tokens)
 
@@ -283,7 +292,7 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
         pos_entity_types.append(e.entity_type.index)
         pos_entity_masks.append(create_entity_mask(*e.span, context_size))
         pos_entity_sizes.append(len(e.tokens))
-        pos_entity_entries.append({"type": e.entity_type.verbose_name, 
+        pos_entity_entries.append({"type_string": e.entity_type.verbose_name, 
                                    "phrase": e.phrase, 
                                    type_key: e.entity_type.index,
                                    "indicator": "[ENT]"})

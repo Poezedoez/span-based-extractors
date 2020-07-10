@@ -637,7 +637,7 @@ class SpEERTrainer(BaseTrainer):
 
         # eval validation set
         if args.init_eval:
-            entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+            entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader, args.k)
             self._eval(model, validation_dataset, input_reader, 0, updates_epoch)
 
         # train
@@ -648,7 +648,7 @@ class SpEERTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+                entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader, args.k)
                 self._eval(model, validation_dataset, entity_knn_module, rel_knn_module, 
                            input_reader, epoch + 1, updates_epoch)
 
@@ -708,7 +708,7 @@ class SpEERTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
+        entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader, self.args.k)
         ner_eval, rel_eval, raw_output = self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
@@ -824,7 +824,7 @@ class SpEERTrainer(BaseTrainer):
 
 
     def _index(self, model: torch.nn.Module, dataset: Dataset,
-               input_reader: JsonInputReader, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
+               input_reader: JsonInputReader, k: int, epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
         self._logger.info("Index: %s" % dataset.label)
 
         if isinstance(model, DataParallel):
@@ -832,14 +832,14 @@ class SpEERTrainer(BaseTrainer):
             model = model.module
 
         # load knn modules (with hardcoded settings)
-        entity_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="entity_knn_module", device="cpu")
-        rel_knn_module = NN.NearestNeighBERT(k=100, f_similarity="IP", indicator="rel_knn_module", device="cpu")
+        entity_knn_module = NN.NearestNeighBERT(k=k, f_similarity="IP", indicator="entity_knn_module", device="cpu")
+        rel_knn_module = NN.NearestNeighBERT(k=k, f_similarity="IP", indicator="rel_knn_module", device="cpu")
         entity_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
         rel_knn_module.ready_training(self.args.tokenizer_path, self.args.encoding_size)
 
         train_sampler = self._sampler.create_train_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
                                                     input_reader.context_size, self.args.neg_entity_count,
-                                                    self.args.neg_relation_count, truncate=False)
+                                                    self.args.neg_relation_count, truncate=False, type_key=self.args.type_key)
         # encode dataset
         with torch.no_grad():
             print("Encoding train examples for evaluation...")
@@ -885,7 +885,7 @@ class SpEERTrainer(BaseTrainer):
 
         # create batch sampler
         sampler = self._sampler.create_eval_sampler(dataset, self.args.eval_batch_size, self.args.max_span_size,
-                                                    input_reader.context_size, truncate=False)         
+                                                    input_reader.context_size, truncate=False, type_key=self.args.type_key)         
         sequences = []
         entities = []
         relations = []
@@ -902,7 +902,7 @@ class SpEERTrainer(BaseTrainer):
                 batch = batch.to(self._device)
                 batch_size = batch.encodings.shape[0]
                 # run model (forward pass)
-                entity_clf, rel_clf, rels = model(entity_knn_module, rel_knn_module, batch.entity_entries,
+                entity_clf, rel_clf, rels = model(entity_knn_module, rel_knn_module, batch.entity_entries, self.args.type_key,
                                             batch.encodings, batch.ctx_masks, batch.entity_masks,batch.entity_sizes, 
                                             batch.entity_spans, batch.entity_sample_masks, mode="eval")
 

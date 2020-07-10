@@ -32,7 +32,7 @@ do
             --model_type $FRAMEWORK \
             --feature_enhancer $model \
             --save_path "data/$FRAMEWORK/save/semeval2017_task10_train_$model/run$run/" \
-            --log_path "data/$FRAMEWORK/log/semeval2017_task10_eval_$model/run$run/"
+            --log_path "data/$FRAMEWORK/log/semeval2017_task10_train_$model/run$run/"
     done
 done
 cp -r * $HOME/speer/

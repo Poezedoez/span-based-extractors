@@ -2,7 +2,7 @@ import json
 from model.util import split
 import os
 
-def reformat_conll03(input_path, output_path):
+def reformat_conll03(input_path, output_path, save=True):
     dataset = []
     tokens = []
     entities = []
@@ -47,8 +47,9 @@ def reformat_conll03(input_path, output_path):
             tokens.append(token)
             previous_label = label
 
-    with open(output_path, 'w', encoding='utf-8') as out_file:
-        json.dump(dataset, out_file)
+    if save:
+        with open(output_path, 'w', encoding='utf-8') as out_file:
+            json.dump(dataset, out_file)
 
 def reformat_semeval2017task10(input_path, output_path):
     
