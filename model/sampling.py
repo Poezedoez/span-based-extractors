@@ -306,7 +306,7 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
         pos_rel_types.append(rel.relation_type) # convert to type index later
         pos_rel_masks.append(create_rel_mask(s1, s2, context_size))
         phrase = "|{}| {} |{}|".format(rel.head_entity.phrase, rel.relation_type.verbose_name, rel.tail_entity.phrase)
-        pos_rel_entries.append({"type": rel.relation_type.verbose_name, 
+        pos_rel_entries.append({"type_string": rel.relation_type.verbose_name, 
                                 "phrase": phrase, 
                                 type_key: rel.relation_type.index,
                                 "indicator": "[REL]"})
@@ -322,7 +322,7 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
                 neg_entity_sizes.append(size)
                 neg_entity_masks.append(create_entity_mask(*span, context_size))
                 neg_entity_types.append(0) # 0 = none type
-                neg_entity_entries.append({"type": "O", 
+                neg_entity_entries.append({"type_string": "O", 
                                            "phrase": phrase, 
                                            type_key: 0,
                                            "indicator": "[ENT]"})
@@ -355,7 +355,7 @@ def _create_train_sample(doc, neg_entity_count, neg_rel_count, max_span_size, co
                 neg_rel_masks.append(create_rel_mask(*spans, context_size))
                 neg_rel_types.append(0)
                 phrase = "|{}| {} |{}|".format(pos_entity_entries[i]["phrase"], "O", pos_entity_entries[j]["phrase"])
-                neg_rel_entries.append({"type": "O", 
+                neg_rel_entries.append({"type_string": "O", 
                                         "phrase": phrase, 
                                         type_key: 0,
                                         "indicator": "[REL]"})
@@ -429,7 +429,7 @@ def _create_eval_sample(doc, max_span_size, context_size, type_key="type_index",
             entity_masks.append(create_entity_mask(*span, context_size))
             entity_sizes.append(span[1]-span[0])
             entity_entries.append({"phrase": phrase,
-                                   "type": entity.entity_type.verbose_name,
+                                   "type_string": entity.entity_type.verbose_name,
                                     type_key: entity.entity_type.index})
     else:
         for size in range(1, max_span_size + 1):
@@ -440,8 +440,8 @@ def _create_eval_sample(doc, max_span_size, context_size, type_key="type_index",
                 entity_masks.append(create_entity_mask(*span, context_size))
                 entity_sizes.append(size)
                 entity_entries.append({"phrase": phrase,
-                                    "type": "<TBD>",
-                                    type_key: "<TBD>"})
+                                    "type_string": "<TBD>",
+                                    type_key: "-1"})
 
     # create tensors
     # token indices

@@ -321,7 +321,7 @@ class SpEER(BertPreTrainedModel):
     def _forward_eval(self, entity_knn_module, rel_knn_module, entity_entries: List[List[Dict]], type_key: str,
                       encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor, 
                       entity_sizes: torch.tensor, entity_spans: torch.tensor = None, 
-                      entity_sample_mask: torch.tensor = None, verbose=True):
+                      entity_sample_mask: torch.tensor = None, verbose=False):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
@@ -342,6 +342,9 @@ class SpEER(BertPreTrainedModel):
         entity_encoding, entity_spans_pool = self._encode_entities(encodings, h, entity_masks, size_embeddings)
         entity_encoding_reshaped = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu()
         entity_types, entity_neighbors = entity_knn_module.infer_(entity_encoding_reshaped, int, type_key)
+
+        # for i, neighbors in enumerate(entity_neighbors):
+        #     print(entity_types[i], neighbors)
         
         # print neighbor entities
         if verbose:
@@ -356,7 +359,7 @@ class SpEER(BertPreTrainedModel):
                 print("[ENT] {} >> {}".format(entity_entries_flat[i]["phrase"], entity_types[i]))
                 for j in range(min(len(neighbors), 5)):
                     n = neighbors[j]
-                    print("\t", n["phrase"], n["type_string"], n["type_index"])
+                    print("\t", n["phrase"], n["type_string"], n[type_key])
                 print()
 
         entity_types = torch.tensor(entity_types).view(entity_encoding.shape[0], entity_encoding.shape[1]).to(device)
@@ -558,7 +561,7 @@ class SpEER(BertPreTrainedModel):
                     if i1 != i2:
                         rels.append((i1, i2))
                         phrase = "|{}| <TBD> |{}|".format(non_zero_entries[n]["phrase"], non_zero_entries[m]["phrase"])
-                        rel_entries.append({"phrase": phrase, "type_string": "<TBD>", type_key: "<TBD>"})
+                        rel_entries.append({"phrase": phrase, "type_string": "<TBD>", type_key: -1})
                         rel_masks.append(sampling.create_rel_mask(s1, s2, ctx_size))
                         sample_masks.append(1)
 
@@ -568,7 +571,7 @@ class SpEER(BertPreTrainedModel):
                 batch_rel_masks.append(torch.tensor([[0] * ctx_size], dtype=torch.bool))
                 batch_rel_sample_masks.append(torch.tensor([0], dtype=torch.bool))
                 phrase = ""
-                batch_rel_entries.append([{"phrase": phrase, "type_string": "<TBD>", type_key: "<TBD>"}])
+                batch_rel_entries.append([{"phrase": phrase, "type_string": "<TBD>", type_key: -1}])
             else:
                 # case: more than two spans classified as entities
                 batch_relations.append(torch.tensor(rels, dtype=torch.long))

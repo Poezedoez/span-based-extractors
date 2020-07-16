@@ -7,19 +7,6 @@ import os
 import statistics
 from collections import defaultdict
 
-def run_eval(args):
-    for framework in [args.framework] if args.framework else ["spert", "speer"]:
-        for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
-            for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
-                for run in [1, 2, 3]:
-                    print("Evaluating {} {} on {} (run {})".format(framework, model, dataset, run)) 
-                    subprocess.run(["python", "main.py", "eval", 
-                                    "--config", "configs/all/{}_eval.conf".format(dataset),
-                                    "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run), 
-                                    "--model_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
-                                    "--model_type", framework,
-                                    "--feature_enhancer", model,
-                                    "--label", "{}_eval_{}".format(dataset, model)])
 
 def run_train(args):
     for framework in [args.framework] if args.framework else ["spert", "speer", "sprt"]:
@@ -28,13 +15,28 @@ def run_train(args):
                 for run in [42]:
                     print("Training {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "train", 
-                                    "--config", "configs/all/{}_train.conf".format(dataset),
+                                    "--config", "configs/{}/{}_train.conf".format(framework, dataset),
                                     "--save_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
                                     "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run),
                                     "--skip_saving",                                    
                                     "--model_type", framework,
                                     "--feature_enhancer", model,
                                     "--label", "{}_train_{}".format(dataset, model)])    
+
+
+def run_eval(args):
+    for framework in [args.framework] if args.framework else ["spert", "speer"]:
+        for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
+            for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
+                for run in [1, 2, 3]:
+                    print("Evaluating {} {} on {} (run {})".format(framework, model, dataset, run)) 
+                    subprocess.run(["python", "main.py", "eval", 
+                                    "--config", "configs/{}/{}_eval.conf".format(framwork, dataset),
+                                    "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run), 
+                                    "--model_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
+                                    "--model_type", framework,
+                                    "--feature_enhancer", model,
+                                    "--label", "{}_eval_{}".format(dataset, model)])
 
 
 def run_read(args):

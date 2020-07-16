@@ -15,7 +15,7 @@ def _add_common_args(arg_parser):
     arg_parser.add_argument('--sampling_processes', type=int, default=4,
                             help="Number of sampling processes. 0 = no multiprocessing for sampling")
     arg_parser.add_argument('--sampling_limit', type=int, default=100, help="Maximum number of sample batches in queue")
-    arg_parser.add_argument('--type_key', type=str, default="type", help="The key name of the entity relation type/label/class etc.")
+    arg_parser.add_argument('--type_key', type=str, default="type_index", help="The key name of the entity relation type/label/class etc.")
 
 
     # Logging

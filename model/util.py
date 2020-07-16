@@ -156,7 +156,7 @@ def padded_stack(tensors, padding=0):
     stacked = torch.stack(padded_tensors)
     return stacked
 
-def padded_entries(entries, padding={"type": "<PAD>", "phrase": "<PAD>", "type_index": -1}):
+def padded_entries(entries, padding={"type_string": "<PAD>", "phrase": "<PAD>", "type_index": -1}):
     lengths = [len(l) for l in entries]
     if not lengths:
         return []

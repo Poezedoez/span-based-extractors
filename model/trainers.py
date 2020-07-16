@@ -852,19 +852,30 @@ class SpEERTrainer(BaseTrainer):
                                                         batch.entity_sizes, batch.rels, batch.rel_masks,
                                                         mode="encode")
                 # flatten encodings and entries
-                entity_encoding = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu() 
+                # entity_encoding = entity_encoding.view(entity_encoding.shape[0]*entity_encoding.shape[1], -1).cpu() 
                 entity_entries_reshaped = []
-                for entry in batch.entity_entries:
-                    entity_entries_reshaped += entry
+                entity_encodings_reshaped = []
+                for i, entries in enumerate(batch.entity_entries):
+                    for j, entry in enumerate(entries):
+                        if entry["type_string"] != "<PAD>":
+                            entity_entries_reshaped.append(entry)
+                            entity_encodings_reshaped.append(entity_encoding[i][j].tolist())
                 
-                rel_encoding = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
+                # rel_encoding = rel_encoding.view(rel_encoding.shape[0]*rel_encoding.shape[1], -1).cpu()
                 rel_entries_reshaped = []
-                for entry in batch.rel_entries:
-                    rel_entries_reshaped += entry
+                rel_encodings_reshaped = []
+                for i, entries in enumerate(batch.rel_entries):
+                    for j, entry in enumerate(entries):
+                        if entry["type_string"] != "<PAD>":
+                            rel_entries_reshaped.append(entry)
+                            rel_encodings_reshaped.append(rel_encoding[i][j].tolist())
                 
                 # index encodings
-                entity_knn_module.train_(entity_encoding, entity_entries_reshaped)
-                rel_knn_module.train_(rel_encoding, rel_entries_reshaped)
+                assert(len(entity_encodings_reshaped)==len(entity_entries_reshaped))
+                assert(len(rel_encodings_reshaped)==len(rel_entries_reshaped))
+                entity_knn_module.train_(entity_encodings_reshaped, entity_entries_reshaped)
+                if rel_encodings_reshaped: # in case no relations
+                    rel_knn_module.train_(rel_encodings_reshaped, rel_entries_reshaped)
 
         return entity_knn_module, rel_knn_module
             
@@ -916,7 +927,7 @@ class SpEERTrainer(BaseTrainer):
 
                 batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
                 for i in range(batch_size):
-                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
+                    sequences.append(evaluator._sequences[batch_count*batch_size+i])
                     entities.append(batch_entities[i])
                     relations.append(batch_relations[i])
                 batch_count += 1
@@ -930,7 +941,7 @@ class SpEERTrainer(BaseTrainer):
             if self.args.store_examples:
                 evaluator.store_examples() 
 
-        return ner_eval, rel_eval (sequences, entities, relations)
+        return ner_eval, rel_eval, (sequences, entities, relations)
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())
