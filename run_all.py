@@ -12,7 +12,7 @@ def run_train(args):
     for framework in [args.framework] if args.framework else ["spert", "speer", "sprt"]:
         for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
             for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
-                for run in [42]:
+                for run in [1,2,3]:
                     print("Training {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "train", 
                                     "--config", "configs/{}/{}_train.conf".format(framework, dataset),
