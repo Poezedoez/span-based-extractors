@@ -10,15 +10,14 @@ from collections import defaultdict
 
 def run_train(args):
     for framework in [args.framework] if args.framework else ["spert", "speer", "sprt"]:
-        for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
+        for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03", "za"]:
             for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
                 for run in [1,2,3]:
                     print("Training {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "train", 
-                                    "--config", "configs/{}/{}_train.conf".format(framework, dataset),
+                                    "--config", "configs/all/{}_train.conf".format(dataset),
                                     "--save_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
-                                    "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run),
-                                    "--skip_saving",                                    
+                                    "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run),                                  
                                     "--model_type", framework,
                                     "--feature_enhancer", model,
                                     "--label", "{}_train_{}".format(dataset, model)])    

@@ -20,6 +20,6 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-python run_all.py train --framework speer >> data/train_all_speer.txt
+python run_all.py train --framework spert --dataset za >> data/train_all_za_spert.txt
 
 cp -r * $HOME/speer/
