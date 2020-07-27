@@ -300,13 +300,13 @@ class SpERTTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        ner_eval, rel_eval, raw_output = self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
+        ner_eval, rel_eval, predictions = self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
 
         self._sampler.join()
 
         # TODO: fix this function
-        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+        util.save_json(predictions, self._log_path, "predictions.json")
 
         return ner_eval, rel_eval
 
@@ -441,7 +441,7 @@ class SpERTTrainer(BaseTrainer):
             if self.args.store_examples:
                 evaluator.store_examples()
 
-        return ner_eval, rel_eval, (sequences, entities, relations)
+        return ner_eval, rel_eval, evaluator._predictions_json
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())

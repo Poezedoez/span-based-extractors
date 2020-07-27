@@ -282,6 +282,11 @@ def convert_to_json_dataset(raw_input, output_path='data/save/za_inference/', sa
 
     return dataset
 
+def save_json(file, path, name="predictions.json"):
+    output_path = os.path.join(path, name)
+    with open(output_path, 'w') as json_out:
+        json.dump(file, json_out)
+
 def plot_grad_flow(named_parameters):
     '''Plots the gradients flowing through different layers in the net during training.
     Can be used for checking for possible gradient vanishing / exploding problems.

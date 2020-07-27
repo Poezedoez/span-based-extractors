@@ -30,6 +30,7 @@ class Evaluator:
         self._examples_path = example_path
 
         self._sequences = []
+        self._tok2orig = []
 
         # relations
         self._gt_relations = []  # ground truth
@@ -38,6 +39,9 @@ class Evaluator:
         # entities
         self._gt_entities = []  # ground truth
         self._pred_entities = []  # prediction
+
+        self._predictions_json = []
+        self._evaluated_sequences = 0
 
         self._pseudo_entity_type = EntityType('Entity', 1, 'Entity', 'Entity')  # for span only evaluation
 
@@ -83,11 +87,9 @@ class Evaluator:
             rel_entity_types = torch.zeros([rels.shape[0], 2])
             if rels.shape[0] != 0:
                 rel_entity_types = torch.stack([entity_types[rels[j]] for j in range(rels.shape[0])])
-
-            # convert predicted relations for evaluation
-            sample_pred_relations = self._convert_pred_relations(rel_types, rel_entity_spans,
-                                                                 rel_entity_types, rel_scores)
-            self._pred_relations.append(sample_pred_relations)
+            
+            # get original tokens
+            tokens = self._sequences[self._evaluated_sequences]
 
             # get entities that are not classified as 'None'
             valid_entity_indices = entity_types.nonzero().view(-1)
@@ -96,12 +98,24 @@ class Evaluator:
             valid_entity_scores = torch.gather(batch_entity_clf[i][valid_entity_indices], 1,
                                                valid_entity_types.unsqueeze(1)).view(-1)
 
-            sample_pred_entities = self._convert_pred_entities(valid_entity_types, valid_entity_spans,
+            sample_pred_entities, mapping, json_entities = self._convert_pred_entities(valid_entity_types, valid_entity_spans,
                                                                valid_entity_scores)
             self._pred_entities.append(sample_pred_entities)
 
+            # convert predicted relations for evaluation
+            sample_pred_relations, json_relations = self._convert_pred_relations(rel_types, rel_entity_spans,
+                                                                 rel_entity_types, rel_scores, mapping)
+            self._pred_relations.append(sample_pred_relations)
+
             batch_entities.append(sample_pred_entities)
             batch_relations.append(sample_pred_relations)
+
+            self._predictions_json.append({"tokens": tokens, 
+                                           "entities": json_entities, 
+                                           "relations": json_relations, 
+                                           "id": hash(" ".join(tokens))})
+                                           
+            self._evaluated_sequences += 1
             
 
         return batch_entities, batch_relations
@@ -201,33 +215,49 @@ class Evaluator:
             gt_relations = doc.relations
             gt_entities = doc.entities
 
-
             # convert ground truth relations and entities for precision/recall/f1 evaluation
             sample_gt_relations = [rel.as_tuple() for rel in gt_relations]
             sample_gt_entities = [entity.as_tuple() for entity in gt_entities]
-            
-            self._sequences.append(tokens)
+            self._sequences.append([t.phrase for t in tokens._tokens])
+            self._tok2orig.append(self._map_tokens(tokens._tokens))
             self._gt_relations.append(sample_gt_relations)
             self._gt_entities.append(sample_gt_entities)
+    
+    def _map_tokens(self, tokens):
+        tok2orig = [0] # special token
+        for i, t in enumerate(tokens): # skip special tokens
+            start, end = t.span_start, t.span_end
+            for _ in range(start, end):
+                tok2orig.append(i)
+            prev = start
+        tok2orig.append(len(tokens)) # special token
+
+        return tok2orig
 
     def _convert_pred_entities(self, pred_types: torch.tensor, pred_spans: torch.tensor, pred_scores: torch.tensor):
         converted_preds = []
-
+        json_entities = []
+        position_mapping = {}
+        
         for i in range(pred_types.shape[0]):
             label_idx = pred_types[i].item()
             entity_type = self._input_reader.get_entity_type(label_idx)
-
             start, end = pred_spans[i].tolist()
             score = pred_scores[i].item()
-
             converted_pred = (start, end, entity_type, score)
+            token_range = self._tok2orig[self._evaluated_sequences][start:end+1]
+            orig_start, orig_end = token_range[0], token_range[-1]
+            position_mapping[(orig_start, orig_end)] = len(converted_preds)
+            json_entities.append({"start": orig_start, "end": orig_end, "type": entity_type.verbose_name})
             converted_preds.append(converted_pred)
 
-        return converted_preds
+        return converted_preds, position_mapping, json_entities
 
     def _convert_pred_relations(self, pred_rel_types: torch.tensor, pred_entity_spans: torch.tensor,
-                                pred_entity_types: torch.tensor, pred_scores: torch.tensor):
+                                pred_entity_types: torch.tensor, pred_scores: torch.tensor,
+                                position_mapping: Dict[Tuple, int]):
         converted_rels = []
+        json_relations = []
         check = set()
 
         for i in range(pred_rel_types.shape[0]):
@@ -245,12 +275,20 @@ class Evaluator:
             converted_rel = ((head_start, head_end, pred_head_type),
                              (tail_start, tail_end, pred_tail_type), pred_rel_type)
             converted_rel = self._adjust_rel(converted_rel)
+            t2o = self._tok2orig[self._evaluated_sequences]
+            head_range = t2o[head_start:head_end+1]
+            tail_range = t2o[tail_start:tail_end+1]
+            head_start, head_end = head_range[0], head_range[-1]
+            tail_start, tail_end = tail_range[0], tail_range[-1]
+            rel_start = position_mapping[(head_start, head_end)]
+            rel_end = position_mapping[(tail_start, tail_end)]
+            json_relations.append({"start": rel_start, "end": rel_end, "type": pred_rel_type.verbose_name})
 
             if converted_rel not in check:
                 check.add(converted_rel)
                 converted_rels.append(tuple(list(converted_rel) + [score]))
 
-        return converted_rels
+        return converted_rels, json_relations
 
     def _adjust_rel(self, rel: Tuple):
         adjusted_rel = rel
