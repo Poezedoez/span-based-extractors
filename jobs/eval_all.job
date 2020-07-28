@@ -20,6 +20,6 @@ source activate lisaenv
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-python run_all.py eval spert
+python run_all.py eval --framework spert
 
 cp -r * $HOME/speer/
