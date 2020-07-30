@@ -106,9 +106,9 @@ if __name__ == "__main__":
     args = arg_parser.parse_args()
     if args.mode == "eval":
         run_eval(args)
-    if args.mode == "train":
+    elif args.mode == "train":
         run_train(args)
-    if args.mode == "read":
+    elif args.mode == "read":
         run_read(args)
     else:
         print("Unknown mode: {}".format(args.mode))
