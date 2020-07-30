@@ -15,11 +15,11 @@ module load 2019
 module load CUDA/10.1.243
 module load Anaconda3/2018.12
 
-source activate lisaenv
+source activate faissenv
 
 cp -r $HOME/speer/ $TMPDIR
 cd $TMPDIR/speer
 
-python run_all.py train --framework spert --dataset za >> data/train_all_za_spert.txt
+python run_all.py train --framework speer >> data/train_all_za_spert.txt
 
 cp -r * $HOME/speer/
