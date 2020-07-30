@@ -248,7 +248,9 @@ class SpERTTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                _, _, predictions = self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                print("Saving predicted dataset of {} sentences...".format(len(predictions)))
+                util.save_json(predictions, self._log_path, "predictions.json")
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -302,10 +304,8 @@ class SpERTTrainer(BaseTrainer):
         # evaluate
         ner_eval, rel_eval, predictions = self._eval(model, input_reader.get_dataset(dataset_label), input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
-
         self._sampler.join()
-
-        # TODO: fix this function
+        print("Saving predicted dataset of {} sentences...".format(len(predictions)))
         util.save_json(predictions, self._log_path, "predictions.json")
 
         return ner_eval, rel_eval
@@ -408,11 +408,9 @@ class SpERTTrainer(BaseTrainer):
             print("DEVICE:", self._device)
             # iterate batches
             total = math.ceil(dataset.document_count / self.args.eval_batch_size)
-            batch_count = 0
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
-                batch_size = batch.encodings.shape[0]
                 # run model (forward pass)
                 entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
                                                   batch.entity_sizes, batch.entity_spans, batch.entity_sample_masks,
@@ -424,13 +422,8 @@ class SpERTTrainer(BaseTrainer):
                 # apply entity sample mask
                 batch_entity_types *= batch.entity_sample_masks.long()
 
-                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, 
-                    rel_clf, rels, batch, return_conversions=True)
-                for i in range(batch_size):
-                    sequences.append(evaluator._sequences[batch_count*batch_size+i])
-                    entities.append(batch_entities[i])
-                    relations.append(batch_relations[i])
-                batch_count += 1
+                evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
+
 
         if not inference_only:
             global_iteration = epoch * updates_epoch + iteration
@@ -649,8 +642,10 @@ class SpEERTrainer(BaseTrainer):
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
                 entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader, args.k)
-                self._eval(model, validation_dataset, entity_knn_module, rel_knn_module, 
+                _,_, predictions = self._eval(model, validation_dataset, entity_knn_module, rel_knn_module, 
                            input_reader, epoch + 1, updates_epoch)
+                print("Saving predicted dataset of {} sentences...".format(len(predictions)))
+                util.save_json(predictions, self._log_path, "predictions.json")
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -709,13 +704,11 @@ class SpEERTrainer(BaseTrainer):
 
         # evaluate
         entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader, self.args.k)
-        ner_eval, rel_eval, raw_output = self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
+        ner_eval, rel_eval, predictions = self._eval(model, eval_dataset, entity_knn_module, rel_knn_module, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
-
         self._sampler.join()
-
-        # TODO: fix this function
-        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+        print("Saving predicted dataset of {} sentences...".format(len(predictions)))
+        util.save_json(predictions, self._log_path, "predictions.json")
 
         return ner_eval, rel_eval
 
@@ -752,9 +745,9 @@ class SpEERTrainer(BaseTrainer):
         # entity_knn_module, rel_knn_module = self._index(model, train_dataset, input_reader)
 
         # do inference
-        _, _, raw_output = self._eval(model, inference_dataset, entity_knn_module, rel_knn_module, input_reader)
+        _, _, predictions = self._eval(model, inference_dataset, entity_knn_module, rel_knn_module, input_reader)
 
-        return outputs
+        return predictions
 
     def _train_epoch(self, model: torch.nn.Module, compute_loss: Loss, optimizer: Optimizer, dataset: Dataset,
                      updates_epoch: int, epoch: int, context_size: int, rel_type_count: int, entity_type_count: int):
@@ -907,7 +900,6 @@ class SpEERTrainer(BaseTrainer):
             print("DEVICE:", self._device)
             # iterate batches
             total = math.ceil(dataset.document_count / self.args.eval_batch_size)
-
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
@@ -918,19 +910,10 @@ class SpEERTrainer(BaseTrainer):
                                             batch.entity_spans, batch.entity_sample_masks, mode="eval")
 
                 
-                # evaluate batch (TODO: what is this?) This block necessary?
-                # get maximum activation (index of predicted entity type)
                 batch_entity_types = entity_clf.argmax(dim=-1)
                 # apply entity sample mask 
                 batch_entity_types *= batch.entity_sample_masks.long()
-                ############
-
-                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
-                for i in range(batch_size):
-                    sequences.append(evaluator._sequences[batch_count*batch_size+i])
-                    entities.append(batch_entities[i])
-                    relations.append(batch_relations[i])
-                batch_count += 1
+                evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
 
         if not inference_only:
             global_iteration = epoch * updates_epoch + iteration
@@ -941,7 +924,7 @@ class SpEERTrainer(BaseTrainer):
             if self.args.store_examples:
                 evaluator.store_examples() 
 
-        return ner_eval, rel_eval, (sequences, entities, relations)
+        return ner_eval, rel_eval, evaluator._predictions_json
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())
@@ -1139,7 +1122,7 @@ class SpRTTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                _, _, predictions = self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -1195,12 +1178,11 @@ class SpRTTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        ner_eval, rel_eval, raw_output = self._eval(model, eval_dataset, predicted_entities_dataset, input_reader)
+        ner_eval, rel_eval, predictions = self._eval(model, eval_dataset, predicted_entities_dataset, input_reader)
         self._logger.info("Logged in: %s" % self._log_path)
         self._sampler.join()
 
-        # TODO: fix this function
-        # util.convert_to_json_dataset(raw_output, self._log_path, save=True)
+        print("Saving predicted dataset of {} sentences...".format(len(predictions)))
 
         return ner_eval, rel_eval
 
@@ -1310,11 +1292,9 @@ class SpRTTrainer(BaseTrainer):
             print("DEVICE:", self._device)
             # iterate batches
             total = math.ceil(predicted_entities_dataset.document_count / self.args.eval_batch_size)
-            batch_count = 0
             for batch in tqdm(sampler, total=total, desc='Evaluate epoch %s' % epoch):
                 # move batch to selected device
                 batch = batch.to(self._device)
-                batch_size = batch.encodings.shape[0]
 
                 # run model (forward pass)
                 entity_clf, rel_clf, rels = model(batch.encodings, batch.ctx_masks, batch.entity_masks,
@@ -1326,12 +1306,7 @@ class SpRTTrainer(BaseTrainer):
                 batch_entity_types = entity_clf.argmax(dim=-1)
                 # apply entity sample mask
                 batch_entity_types *= batch.entity_sample_masks.long()
-                batch_entities, batch_relations = evaluator.eval_batch(entity_clf, rel_clf, rels, batch, return_conversions=True)
-                for i in range(batch_size):
-                    sequences.append(sampler._batches[batch_count][1][i].actual_tokens)
-                    entities.append(batch_entities[i])
-                    relations.append(batch_relations[i])
-                batch_count += 1
+                evaluator.eval_batch(entity_clf, rel_clf, rels, batch)
         
         if not inference_only:
             global_iteration = epoch * updates_epoch + iteration
@@ -1342,7 +1317,7 @@ class SpRTTrainer(BaseTrainer):
             if self.args.store_examples:
                 evaluator.store_examples()
 
-        return ner_eval, rel_eval, (sequences, entities, relations)
+        return ner_eval, rel_eval, evaluator._predictions_json
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())

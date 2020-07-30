@@ -321,7 +321,7 @@ class SpEER(BertPreTrainedModel):
     def _forward_eval(self, entity_knn_module, rel_knn_module, entity_entries: List[List[Dict]], type_key: str,
                       encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor, 
                       entity_sizes: torch.tensor, entity_spans: torch.tensor = None, 
-                      entity_sample_mask: torch.tensor = None, verbose=False):
+                      entity_sample_mask: torch.tensor = None, verbose=True):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]

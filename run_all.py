@@ -13,7 +13,7 @@ def run_train(args):
         # for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03", "za"]:
         for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
             for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
-                for run in [1,2,3]:
+                for run in [args.run] if args.run else [1, 2, 3]:
                     print("Training {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "train", 
                                     "--config", "configs/{}/{}_train.conf".format(framework, dataset),
@@ -28,7 +28,7 @@ def run_eval(args):
     for framework in [args.framework] if args.framework else ["spert", "speer"]:
         for dataset in [args.dataset] if args.dataset else ["semeval2017_task10", "conll03"]:
             for model in [args.model] if args.model else ["map", "mlp", "bilstm", "transformer"]:
-                for run in [1, 2, 3]:
+                for run in [args.run] if args.run else [1, 2, 3]:
                     print("Evaluating {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "eval", 
                                     "--config", "configs/{}/{}_eval.conf".format(framework, dataset),
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('--model', type=str, help="Model: map, mlp, bilstm, transformer. Defaults to all", default=None)
     arg_parser.add_argument('--dataset', type=str, help="Dataset: conll03, conll04, semeval2017_task10. Defaults to all", default=None)
     arg_parser.add_argument('--framework', type=str, help="Framework: spert, speer, sprt. Defaults to all", default=None)
-    arg_parser.add_argument('--run', type=str, help="Run: 1, 2, 3. (eval and read mode) Defaults to all", default=None)
+    arg_parser.add_argument('--run', type=int, help="Run: 1, 2, 3. (eval and read mode) Defaults to all", default=None)
 
     args = arg_parser.parse_args()
     if args.mode == "eval":

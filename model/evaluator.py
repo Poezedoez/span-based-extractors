@@ -18,6 +18,7 @@ class Evaluator:
     def __init__(self, dataset: Dataset, input_reader: JsonInputReader, text_encoder: BertTokenizer,
                  rel_filter_threshold: float, example_count: int, example_path: str,
                  epoch: int, dataset_label: str):
+        print("Initializing evaluator... for dataset {}".format(dataset_label))
         self._text_encoder = text_encoder
         self._input_reader = input_reader
         self._dataset = dataset
