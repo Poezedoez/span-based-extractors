@@ -321,7 +321,7 @@ class SpEER(BertPreTrainedModel):
     def _forward_eval(self, entity_knn_module, rel_knn_module, entity_entries: List[List[Dict]], type_key: str,
                       encodings: torch.tensor, context_mask: torch.tensor, entity_masks: torch.tensor, 
                       entity_sizes: torch.tensor, entity_spans: torch.tensor = None, 
-                      entity_sample_mask: torch.tensor = None, verbose=True):
+                      entity_sample_mask: torch.tensor = None, verbose=False):
         # get contextualized token embeddings from last transformer layer
         context_mask = context_mask.float()
         h = self.bert(input_ids=encodings, attention_mask=context_mask)[0]
@@ -356,10 +356,10 @@ class SpEER(BertPreTrainedModel):
             for i, neighbors in enumerate(entity_neighbors):
                 if entity_types[i] == 0: 
                     continue
-                print("[ENT] {} >> {}".format(entity_entries_flat[i]["phrase"], entity_types[i]))
+                print("[ENT] {} >> {}".format(entity_entries_flat[i]["phrase"].encode('utf-8'), entity_types[i]))
                 for j in range(min(len(neighbors), 5)):
                     n = neighbors[j]
-                    print("\t", n["phrase"], n["type_string"], n[type_key])
+                    print("\t", n["phrase"].encode('utf-8'), n["type_string"], n[type_key])
                 print()
 
         entity_types = torch.tensor(entity_types).view(entity_encoding.shape[0], entity_encoding.shape[1]).to(device)
@@ -396,10 +396,10 @@ class SpEER(BertPreTrainedModel):
             for i, neighbors in enumerate(rel_neighbors):
                 if rel_types[i] == 0: 
                     continue
-                print("[REL] {} >> {}".format(rel_entries_flat[i]["phrase"], rel_types[i]))
+                print("[REL] {} >> {}".format(rel_entries_flat[i]["phrase"].encode('utf-8'), rel_types[i]))
                 for j in range(min(len(neighbors), 5)):
                     n = neighbors[j]
-                    print("\t", n["phrase"], n["type_string"], n[type_key])
+                    print("\t", n["phrase"].encode('utf-8'), n["type_string"], n[type_key])
                 print()
 
         rel_types = torch.LongTensor(rel_types).view(rel_encoding.shape[0], rel_encoding.shape[1]).to(device)
