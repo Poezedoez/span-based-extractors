@@ -32,7 +32,7 @@ def run_eval(args):
                     print("Evaluating {} {} on {} (run {})".format(framework, model, dataset, run)) 
                     subprocess.run(["python", "main.py", "eval", 
                                     "--config", "configs/{}/{}_eval.conf".format(framework, dataset),
-                                    "--log_path", "data/{}/log/{}_train_{}/run{}/".format(framework, dataset, model, run), 
+                                    "--log_path", "data/{}/log/{}_eval_{}/run{}/".format(framework, dataset, model, run), 
                                     "--model_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
                                     "--model_type", framework,
                                     "--feature_enhancer", model,
