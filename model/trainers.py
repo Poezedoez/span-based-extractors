@@ -1122,7 +1122,7 @@ class SpRTTrainer(BaseTrainer):
 
             # eval validation sets
             if not args.final_eval or (epoch == args.epochs - 1):
-                _, _, predictions = self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                _, _, predictions = self._eval(model, validation_dataset, validation_dataset, input_reader, epoch + 1, updates_epoch)
 
         # save final model
         name = 'final_model' if not args.timestamp_given else ''
@@ -1273,7 +1273,7 @@ class SpRTTrainer(BaseTrainer):
             # currently no multi GPU support during evaluation
             model = model.module
 
-        assert len(eval_dataset.document_count)==len(predicted_entities_dataset.document_count)
+        assert eval_dataset.document_count==predicted_entities_dataset.document_count
         
         # create evaluator
         evaluator = Evaluator(eval_dataset, input_reader, self._tokenizer,
