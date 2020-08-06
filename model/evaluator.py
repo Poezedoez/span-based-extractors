@@ -249,7 +249,7 @@ class Evaluator:
             token_range = self._tok2orig[self._evaluated_sequences][start:end+1]
             orig_start, orig_end = token_range[0], token_range[-1]
             position_mapping[(orig_start, orig_end)] = len(converted_preds)
-            json_entities.append({"start": orig_start, "end": orig_end, "type": entity_type.verbose_name})
+            json_entities.append({"start": orig_start, "end": orig_end, "type": entity_type.short_name})
             converted_preds.append(converted_pred)
 
         return converted_preds, position_mapping, json_entities
@@ -273,17 +273,19 @@ class Evaluator:
             head_start, head_end = spans[0].tolist()
             tail_start, tail_end = spans[1].tolist()
 
-            converted_rel = ((head_start, head_end, pred_head_type),
+            rel = ((head_start, head_end, pred_head_type),
                              (tail_start, tail_end, pred_tail_type), pred_rel_type)
-            converted_rel = self._adjust_rel(converted_rel)
+            converted_rel = self._adjust_rel(rel)
+            head_start, head_end = converted_rel[0][0], converted_rel[0][1]
+            tail_start, tail_end = converted_rel[1][0], converted_rel[1][1]
             t2o = self._tok2orig[self._evaluated_sequences]
             head_range = t2o[head_start:head_end+1]
             tail_range = t2o[tail_start:tail_end+1]
             head_start, head_end = head_range[0], head_range[-1]
             tail_start, tail_end = tail_range[0], tail_range[-1]
-            rel_start = position_mapping[(head_start, head_end)]
-            rel_end = position_mapping[(tail_start, tail_end)]
-            json_relations.append({"start": rel_start, "end": rel_end, "type": pred_rel_type.verbose_name})
+            final_head = position_mapping[(head_start, head_end)]
+            final_tail = position_mapping[(tail_start, tail_end)]
+            json_relations.append({"head": final_head, "tail": final_tail, "type": pred_rel_type.short_name})
 
             if converted_rel not in check:
                 check.add(converted_rel)
