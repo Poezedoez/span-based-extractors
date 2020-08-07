@@ -1183,6 +1183,7 @@ class SpRTTrainer(BaseTrainer):
         self._sampler.join()
 
         print("Saving predicted dataset of {} sentences...".format(len(predictions)))
+        util.save_json(predictions, self._log_path, "predictions.json")
 
         return ner_eval, rel_eval
 
