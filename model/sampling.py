@@ -454,7 +454,7 @@ def _create_eval_sample(doc, max_span_size, context_size, type_key="type_index",
     ctx_mask[:len(_encoding)] = 1
 
     # entities
-    entity_masks = torch.stack(entity_masks) if entity_masks else torch.zeros(1, context_size)
+    entity_masks = torch.stack(entity_masks) if entity_masks else torch.zeros([1, context_size], dtype=torch.bool)
     entity_sizes = torch.tensor(entity_sizes, dtype=torch.long) if entity_sizes else torch.tensor([0], dtype=torch.long)
     entity_spans = torch.tensor(entity_spans, dtype=torch.long) if  entity_spans else torch.tensor([(0,0)], dtype=torch.long)
 
