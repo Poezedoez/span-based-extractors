@@ -34,7 +34,7 @@ def run_eval(args):
                                     "--config", "configs/{}/{}_eval.conf".format(framework, dataset),
                                     "--log_path", "data/{}/log/{}_eval_{}/run{}/".format(framework, dataset, model, run), 
                                     "--eval_path", "data/sprt/save/gt_{}_{}_run{}.json".format(dataset, model, run),
-                                    "--predicted_entities_path", "data/sprt/save/predictions_{}_{}_run{}.json".format(dataset, model, run),
+                                    "--predicted_entities_path", "data/spert/log/{}_eval_{}/run{}/predictions.json".format(dataset, model, run),
                                     "--model_path", "data/{}/save/{}_train_{}/run{}/".format(framework, dataset, model, run),
                                     "--model_type", framework,
                                     "--feature_enhancer", model,
