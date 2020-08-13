@@ -38,7 +38,7 @@ def run_eval(args):
                                         "--config", "configs/{}/za_eval.conf".format(framework),
                                         "--log_path", "data/{}/log/{}_eval_{}_{}/run{}/".format(framework, dataset, model, ratio, run), 
                                         "--train_path", "data/datasets/{}/za_train_{}.json".format(dataset, ratio),
-                                        "--predicted_entities_path", "data/sprt/save/predictions_{}_{}.json".format(model, ratio),
+                                        "--predicted_entities_path", "data/spert/log/{}_eval_{}_{}/predictions.json".format(dataset, model, ratio),
                                         "--eval_path", "data/datasets/{}/za_test.json".format(dataset),
                                         "--model_path", "data/{}/save/{}_train_{}_{}/run{}/".format(framework, dataset, model, ratio, run),
                                         "--types_path", "data/datasets/{}/za_types.json".format(dataset),
