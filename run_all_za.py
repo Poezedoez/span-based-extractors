@@ -36,15 +36,18 @@ def run_eval(args):
                         print("Evaluating {} {} on {} (run {})".format(framework, model, dataset, run)) 
                         subprocess.run(["python", "main.py", "eval", 
                                         "--config", "configs/{}/za_eval.conf".format(framework),
-                                        "--log_path", "data/{}/log/{}_eval_{}_{}/run{}/".format(framework, dataset, model, ratio, run), 
+                                        # "--log_path", "data/{}/log/{}_eval_{}_{}/run{}/".format(framework, dataset, model, ratio, run), 
+                                        "--log_path", "data/{}/log/{}_eval_token_{}_{}_run{}.json".format(framework, dataset, model, run), 
                                         "--train_path", "data/datasets/{}/za_train_{}.json".format(dataset, ratio),
-                                        "--predicted_entities_path", "data/spert/log/{}_eval_{}_{}/run1/predictions.json".format(dataset, model, ratio),
+                                        # "--predicted_entities_path", "data/spert/log/{}_eval_{}_{}/run1/predictions.json".format(dataset, model, ratio),
+                                        "--predicted_entities_path", "data/sprt/save/predictions{}_eval_{}_{}/run{}/predictions.json".format(dataset, model, ratio)
                                         "--eval_path", "data/datasets/{}/za_test.json".format(dataset),
                                         "--model_path", "data/{}/save/{}_train_{}_{}/run{}/".format(framework, dataset, model, ratio, run),
                                         "--types_path", "data/datasets/{}/za_types.json".format(dataset),
                                         "--model_type", framework,
                                         "--feature_enhancer", model,
-                                        "--label", "{}_eval_{}_{}".format(dataset, model, ratio)])
+                                        # "--label", "{}_eval_{}_{}".format(dataset, model, ratio)])
+                                        "--label", "{}_eval_token_{}_{}".format(dataset, model, ratio)])
 
 
 def run_read(args):
