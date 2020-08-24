@@ -3,11 +3,10 @@ import argparse
 from args import train_argparser, eval_argparser, infer_argparser, map_args
 from config_reader import process_configs, process_configs_serial
 from model import input_reader
-from model.trainers import SpERTTrainer, SpEERTrainer, SpRTTrainer
+from model.trainers import SpERTTrainer, SpEERTrainer, SpRTTrainer, SpETTrainer
 from model import util
 
 def __train(run_args, skip_saving=False, queue=None):
-    print(run_args)
     trainer = get_trainer(run_args.model_type)(run_args)
     model = trainer.train(train_path=run_args.train_path, valid_path=run_args.valid_path,
                           types_path=run_args.types_path, input_reader_cls=input_reader.JsonInputReader,
@@ -76,7 +75,8 @@ def _print_inference_results(json_data):
 _TRAINERS = {
     'spert': SpERTTrainer,
     'speer':SpEERTrainer,
-    'sprt': SpRTTrainer
+    'sprt': SpRTTrainer,
+    'spet': SpETTrainer
 }
 
 def get_trainer(name, default=SpERTTrainer):
@@ -86,8 +86,6 @@ def get_trainer(name, default=SpERTTrainer):
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser(add_help=False)
     arg_parser.add_argument('mode', type=str, help="Mode: 'train' or 'eval'")
-    # arg_parser.add_argument('--skip_saving', action='store_true', default=False, 
-    #                         help="Dont save trained model to disk")
     args, _ = arg_parser.parse_known_args()
     example_data = {
         'guid': 'IDtest',
