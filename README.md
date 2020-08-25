@@ -1,12 +1,16 @@
-# SpERT (original): Span-based Entity and Relation Transformer
-# SpEER: Span-based Encoder for Entities and Relations
-# SpET: Span-based Entity Transformer
-# SpRT: Span-based Relation Transformer
+## Models:
+### SpERT (original): Span-based Entity and Relation Transformer
+### SpEER: Span-based Encoder for Entities and Relations
+### SpET: Span-based Entity Transformer
+### SpRT: Span-based Relation Transformer
 
-PyTorch code for Span-based extractors. Built on SpERT framework https://github.com/markus-eberts/spert
+This PyTorch code is part of a MSc Thesis AI for the University of Amsterdam: "Iterative Knowledge Graph Population using Entity and Relation Extraction"
+
+The Span-based extractors are built on SpERT framework https://github.com/markus-eberts/spert
 
 Check out their paper: "Span-based Entity and Relation Transformer" https://arxiv.org/abs/1909.07755 (accepted at ECAI 2020).
 
+### Overview of model architectures used
 ![alt text](assets/Span_extractors.svg)
 
 ## Setup
@@ -21,19 +25,27 @@ Check out their paper: "Span-based Entity and Relation Transformer" https://arxi
 - Optional
   - jinja2 (tested with version 2.10.3) - if installed, used to export relation extraction examples
   - tensorboardX (tested with version 1.6) - if installed, used to save training process to tensorboard
+  
+- A conda virtual env setup is included in _environment.yml_, activate using:
+  ```conda env create -f environment.yml```
+  
+- For SpEER a k-nn classifier is needed, currently only NearestNeighBERT is supported. To install do:
+  - Download/clone Nearest NeighBERT: https://github.com/Poezedoez/NearestNeighBERT
+  - Install with pip:
+     ```
+    pip install .
+    ```
 
-### Fetch data
-Fetch converted (to specific JSON format) CoNLL04 \[1\] (we use the same split as \[4\]), SciERC \[2\] and ADE \[3\] datasets (see referenced papers for the original datasets):
-```
-bash ./scripts/fetch_datasets.sh
-```
-
-Fetch model checkpoints (best out of 5 runs for each dataset):
-```
-bash ./scripts/fetch_models.sh
-```
-The attached ADE model was trained on split "1" ("ade_split_1_train.json" / "ade_split_1_test.json") under "data/datasets/ade".
+### Data
+The models can be tested on existing datasets. You can download the original CoNLL03 and SemEval2017 Task10 datasets.
+Reformat data using _reformat.py_
 
 ## Examples
+Train:
+```python main.py train --config configs/speer/conll03_train.conf ```
 
-```
+The trained model is now saved in _data/speer/save/conll03_train/_.
+
+Evaluate:
+```python main.py eval --config configs/speer/conll03_eval.conf ```
+
