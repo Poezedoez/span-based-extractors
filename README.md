@@ -4,8 +4,9 @@
 ### SpET: Span-based Entity Transformer
 ### SpRT: Span-based Relation Transformer
 
-This code is part of a MSc Thesis AI for the University of Amsterdam: "Iterative Knowledge Graph Population using Entity and Relation Extraction"
-This PyTorch code for Span-based extractors is built on SpERT framework https://github.com/markus-eberts/spert
+This PyTorch code is part of a MSc Thesis AI for the University of Amsterdam: "Iterative Knowledge Graph Population using Entity and Relation Extraction"
+
+The Span-based extractors are built on SpERT framework https://github.com/markus-eberts/spert
 
 Check out their paper: "Span-based Entity and Relation Transformer" https://arxiv.org/abs/1909.07755 (accepted at ECAI 2020).
 
