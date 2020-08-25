@@ -10,6 +10,7 @@ The Span-based extractors are built on SpERT framework https://github.com/markus
 
 Check out their paper: "Span-based Entity and Relation Transformer" https://arxiv.org/abs/1909.07755 (accepted at ECAI 2020).
 
+### Overview of model architectures used
 ![alt text](assets/Span_extractors.svg)
 
 ## Setup
