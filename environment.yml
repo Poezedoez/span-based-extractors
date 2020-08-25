@@ -1,4 +1,4 @@
-name: faissenv
+name: spanenv
 channels:
   - pytorch
   - defaults
@@ -85,5 +85,4 @@ dependencies:
     - tqdm==4.45.0
     - transformers==2.7.0
     - urllib3==1.25.8
-prefix: /home/ragger/anaconda3/envs/faissenv
 
