@@ -54,6 +54,8 @@ class SpERTLoss(Loss):
         entity_loss = self._entity_criterion(entity_logits, entity_types)
         entity_loss = (entity_loss * entity_sample_mask).sum() / entity_sample_mask.sum()
 
+        # print("entity loss:", entity_loss.item())
+
         # relation loss
         rel_logits = rel_logits.view(-1, rel_logits.shape[-1])
         rel_types = rel_types.view(-1, rel_types.shape[-1])
@@ -61,6 +63,8 @@ class SpERTLoss(Loss):
         rel_loss = self._rel_criterion(rel_logits, rel_types)
         rel_loss = rel_loss.sum(-1) / rel_loss.shape[-1]
         rel_loss = (rel_loss * rel_sample_mask).sum() / rel_sample_mask.sum()
+
+        # print("rel loss:", rel_loss.item())
 
         # joint loss
         if torch.isnan(rel_loss):

@@ -17,12 +17,14 @@ SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 class Evaluator:
     def __init__(self, dataset: Dataset, input_reader: JsonInputReader, text_encoder: BertTokenizer,
                  rel_filter_threshold: float, example_count: int, example_path: str,
-                 epoch: int, dataset_label: str):
+                 epoch: int, dataset_label: str, entities_only=False, relations_only=False):
         print("Initializing evaluator... for dataset {}".format(dataset_label))
         self._text_encoder = text_encoder
         self._input_reader = input_reader
         self._dataset = dataset
         self._rel_filter_threshold = rel_filter_threshold
+        self._entities_only = entities_only
+        self._relations_only = relations_only
 
         self._epoch = epoch
         self._dataset_label = dataset_label
@@ -121,6 +123,48 @@ class Evaluator:
 
         return batch_entities, batch_relations
 
+
+    def eval_batch_entities(self, batch_entity_clf: torch.tensor, 
+                            batch: EvalTensorBatch, return_conversions=False):
+        batch_size = batch_entity_clf.shape[0]
+
+        # get maximum activation (index of predicted entity type)
+        batch_entity_types = batch_entity_clf.argmax(dim=-1)
+        # apply entity sample mask
+        batch_entity_types *= batch.entity_sample_masks.long()
+
+        batch_entities = []
+        for i in range(batch_size):
+            # get model predictions for sample
+            entity_types = batch_entity_types[i]
+
+            
+            # get original tokens
+            tokens = self._sequences[self._evaluated_sequences]
+
+            # get entities that are not classified as 'None'
+            valid_entity_indices = entity_types.nonzero().view(-1)
+            valid_entity_types = entity_types[valid_entity_indices]
+            valid_entity_spans = batch.entity_spans[i][valid_entity_indices]
+            valid_entity_scores = torch.gather(batch_entity_clf[i][valid_entity_indices], 1,
+                                               valid_entity_types.unsqueeze(1)).view(-1)
+
+            sample_pred_entities, mapping, json_entities = self._convert_pred_entities(valid_entity_types, valid_entity_spans,
+                                                               valid_entity_scores)
+            self._pred_entities.append(sample_pred_entities)
+
+            batch_entities.append(sample_pred_entities)
+
+            self._predictions_json.append({"tokens": tokens, 
+                                           "entities": json_entities, 
+                                           "relations": [], 
+                                           "id": hash(" ".join(tokens))})
+                                           
+            self._evaluated_sequences += 1
+            
+        return batch_entities
+
+        
     def compute_scores(self):
         print("Evaluation")
 
